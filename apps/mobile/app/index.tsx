@@ -1,0 +1,257 @@
+/**
+ * HomeScreen (app/index.tsx)
+ *
+ * Layout:
+ *   • Market status badge (OPEN / PRE-MARKET / AFTER-HOURS / CLOSED)
+ *     with countdown timer to the next session boundary
+ *   • Index strip: SPY, QQQ, IWM — price + percent change
+ *   • Macro strip: VIX, 10Y, DXY — marked TODO: REPLACE WITH LIVE DATA
+ */
+
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useMarketDataStore } from '../stores/marketData';
+import { CHART_COLORS } from '../components/chart/chartTypes';
+
+// ── Market hours (NYSE — ET, UTC-4 or UTC-5) ─────────────────────────────────
+
+type MarketStatus = 'PRE-MARKET' | 'OPEN' | 'AFTER-HOURS' | 'CLOSED';
+
+interface StatusInfo {
+  status:     MarketStatus;
+  label:      string;
+  color:      string;
+  nextLabel:  string;    // "Opens in" / "Closes in" / etc.
+  nextMs:     number;    // ms until next boundary
+}
+
+function getEasternDate(d: Date): { h: number; m: number; dayOfWeek: number } {
+  // Approximate ET — does not account for DST transitions intraday.
+  // Convert UTC to ET (UTC-5 standard / UTC-4 daylight).
+  // For simplicity, use the Intl API to get the hour in ET.
+  const etStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false, weekday: 'short' });
+  // format: "Mon 09:30"
+  const parts = etStr.split(' ');
+  const weekdays: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const dayOfWeek = weekdays[parts[0]] ?? 1;
+  const [hStr, mStr] = (parts[1] ?? '0:0').split(':');
+  return { h: parseInt(hStr, 10), m: parseInt(mStr, 10), dayOfWeek };
+}
+
+function computeStatus(now: Date): StatusInfo {
+  const { h, m, dayOfWeek } = getEasternDate(now);
+  const etMinutes = h * 60 + m;
+
+  const PRE_OPEN  = 4 * 60;       // 04:00 ET
+  const OPEN      = 9 * 60 + 30;  // 09:30 ET
+  const CLOSE     = 16 * 60;      // 16:00 ET
+  const AFTER_END = 20 * 60;      // 20:00 ET
+
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+  if (isWeekend) {
+    // Next session: Monday 09:30 ET
+    const daysUntilMon = dayOfWeek === 6 ? 2 : 1;
+    const nextOpen = new Date(now);
+    nextOpen.setDate(nextOpen.getDate() + daysUntilMon);
+    nextOpen.toLocaleString('en-US', { timeZone: 'America/New_York' }); // trigger tz
+    return {
+      status:    'CLOSED',
+      label:     'CLOSED',
+      color:     '#6E7681',
+      nextLabel: 'Opens Mon',
+      nextMs:    nextOpen.getTime() - now.getTime(),
+    };
+  }
+
+  if (etMinutes < PRE_OPEN) {
+    const msUntilPre = (PRE_OPEN - etMinutes) * 60_000;
+    return { status: 'CLOSED', label: 'CLOSED', color: '#6E7681', nextLabel: 'Pre-market in', nextMs: msUntilPre };
+  }
+  if (etMinutes < OPEN) {
+    const msUntilOpen = (OPEN - etMinutes) * 60_000;
+    return { status: 'PRE-MARKET', label: 'PRE-MARKET', color: '#FF9800', nextLabel: 'Opens in', nextMs: msUntilOpen };
+  }
+  if (etMinutes < CLOSE) {
+    const msUntilClose = (CLOSE - etMinutes) * 60_000;
+    return { status: 'OPEN', label: 'OPEN', color: '#26A69A', nextLabel: 'Closes in', nextMs: msUntilClose };
+  }
+  if (etMinutes < AFTER_END) {
+    const msUntilEnd = (AFTER_END - etMinutes) * 60_000;
+    return { status: 'AFTER-HOURS', label: 'AFTER-HOURS', color: '#FF9800', nextLabel: 'Ends in', nextMs: msUntilEnd };
+  }
+  return { status: 'CLOSED', label: 'CLOSED', color: '#6E7681', nextLabel: 'Pre-market', nextMs: (24 * 60 - etMinutes + PRE_OPEN) * 60_000 };
+}
+
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return '0:00';
+  const totalS = Math.floor(ms / 1000);
+  const h      = Math.floor(totalS / 3600);
+  const min    = Math.floor((totalS % 3600) / 60);
+  const sec    = totalS % 60;
+  if (h > 0) return `${h}h ${min}m`;
+  return `${min}:${String(sec).padStart(2, '0')}`;
+}
+
+// ── Index strip data ──────────────────────────────────────────────────────────
+
+const INDEX_TICKERS = ['SPY', 'QQQ', 'IWM'] as const;
+const MACRO_ITEMS = [
+  { label: 'VIX',  suffix: '' },
+  { label: '10Y',  suffix: '%' },
+  { label: 'DXY',  suffix: '' },
+] as const;
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function HomeScreen() {
+  const [statusInfo, setStatusInfo] = useState<StatusInfo>(() => computeStatus(new Date()));
+  const quotes = useMarketDataStore((s) => s.quotes);
+
+  // Tick every second for the countdown
+  useEffect(() => {
+    const id = setInterval(() => setStatusInfo(computeStatus(new Date())), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
+        {/* ── Market status badge ── */}
+        <View style={styles.statusRow}>
+          <View style={[styles.statusBadge, { borderColor: statusInfo.color }]}>
+            <View style={[styles.statusDot, { backgroundColor: statusInfo.color }]} />
+            <Text style={[styles.statusText, { color: statusInfo.color }]}>
+              {statusInfo.label}
+            </Text>
+          </View>
+          <Text style={styles.countdownText}>
+            {statusInfo.nextLabel} {formatCountdown(statusInfo.nextMs)}
+          </Text>
+        </View>
+
+        {/* ── Index strip ── */}
+        <Text style={styles.sectionHeader}>INDICES</Text>
+        <View style={styles.stripRow}>
+          {INDEX_TICKERS.map((ticker) => {
+            const q = quotes[ticker];
+            const price  = q?.last        ?? null;
+            const change = q?.changePercent ?? null;
+            const isPos  = (change ?? 0) >= 0;
+            return (
+              <View key={ticker} style={styles.stripCard}>
+                <Text style={styles.stripTicker}>{ticker}</Text>
+                <Text style={styles.stripPrice}>
+                  {price !== null ? `$${price.toFixed(2)}` : '—'}
+                </Text>
+                <Text style={[styles.stripChange, { color: isPos ? CHART_COLORS.bullBody : CHART_COLORS.bearBody }]}>
+                  {change !== null ? `${isPos ? '+' : ''}${change.toFixed(2)}%` : '—'}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* ── Macro strip ── */}
+        <Text style={styles.sectionHeader}>MACRO</Text>
+        <View style={styles.stripRow}>
+          {MACRO_ITEMS.map(({ label, suffix }) => (
+            <View key={label} style={styles.stripCard}>
+              <Text style={styles.stripTicker}>{label}</Text>
+              {/* TODO: REPLACE WITH LIVE DATA */}
+              <Text style={styles.stripPrice}>—{suffix}</Text>
+              <Text style={[styles.stripChange, { color: CHART_COLORS.textMuted }]}>—</Text>
+            </View>
+          ))}
+        </View>
+
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  safe: {
+    flex:            1,
+    backgroundColor: CHART_COLORS.background,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: 14,
+    paddingTop:        16,
+    paddingBottom:     32,
+  },
+  statusRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    marginBottom:   20,
+  },
+  statusBadge: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    borderWidth:    1,
+    borderRadius:   6,
+    paddingHorizontal: 10,
+    paddingVertical:    4,
+    gap: 6,
+  },
+  statusDot: {
+    width:        7,
+    height:       7,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize:   12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  countdownText: {
+    color:    CHART_COLORS.textMuted,
+    fontSize: 12,
+  },
+  sectionHeader: {
+    color:         CHART_COLORS.textMuted,
+    fontSize:      10,
+    fontWeight:    '700',
+    letterSpacing: 1.2,
+    marginBottom:  8,
+    marginTop:     4,
+  },
+  stripRow: {
+    flexDirection:  'row',
+    gap:            10,
+    marginBottom:   20,
+  },
+  stripCard: {
+    flex:            1,
+    backgroundColor: '#161B22',
+    borderRadius:    8,
+    padding:         12,
+    borderWidth:     1,
+    borderColor:     CHART_COLORS.gridLine,
+    gap:             2,
+  },
+  stripTicker: {
+    color:      CHART_COLORS.textMuted,
+    fontSize:   10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  stripPrice: {
+    color:      CHART_COLORS.textPrimary,
+    fontSize:   15,
+    fontWeight: '600',
+    marginTop:  2,
+  },
+  stripChange: {
+    fontSize:   12,
+    fontWeight: '500',
+  },
+});

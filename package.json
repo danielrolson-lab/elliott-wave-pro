@@ -1,0 +1,22 @@
+{
+  "name": "elliott-wave-pro",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "test:ws": "tsx apps/mobile/test-ws.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "@types/ws": "^8.5.11",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.16.0",
+    "typescript": "^5.4.5",
+    "ws": "^8.17.1"
+  }
+}
