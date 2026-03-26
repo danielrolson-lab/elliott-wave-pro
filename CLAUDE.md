@@ -4,7 +4,7 @@ Monorepo: `pnpm` workspaces.
 Mobile app: `apps/mobile` (Expo SDK 51, React Native 0.74, TypeScript strict).
 Engine: `packages/wave-engine` (pure TS, Vitest, no RN deps).
 
-**Current phase: Phase 4**
+**Current phase: Phase 5**
 
 ---
 
@@ -373,3 +373,35 @@ See **Phase 2 Readiness** section at the bottom of this file.
 - [x] `docs/CONTRIBUTING.md` — coding standards, CLAUDE.md rules in developer format
 - [x] `docs/CHANGELOG.md` — all features across Phases 1–4 by version
 - [x] `README.md` — setup instructions, feature list, screenshots placeholder
+
+---
+
+## Phase 5 Deliverables
+
+### D1 — App icon and splash screen
+- [x] `scripts/generate-icons.ts` — Node.js script using jimp; generates all icon sizes
+- [x] `apps/mobile/assets/icon.png` — 1024×1024, black bg, Elliott Wave impulse in white, "EW" label
+- [x] `apps/mobile/assets/splash-icon.png` — 512×512 centered on black
+- [x] `apps/mobile/assets/android-icon-foreground.png` — adaptive icon foreground
+- [x] `apps/mobile/assets/notification-icon.png` — white wave on transparent bg
+
+### D2 — Supabase database migrations
+- [x] `supabase/migrations/001_initial_schema.sql` — all tables: profiles, watchlists, wave_count_cache, alerts, alert_history, trade_journal, api_keys, subscription_tiers
+- [x] RLS enabled on all tables; users can only read/write own rows
+- [x] Indexes on ticker and user_id columns
+
+### D5 — EAS build configuration
+- [x] `apps/mobile/eas.json` — updated development/preview/production profiles
+- [x] `apps/mobile/app.json` — expo-local-authentication plugin added
+
+### D8 — App Store listing content
+- [x] `docs/appstore/metadata.md` — iOS App Store: name, subtitle, description, keywords, URLs, category, age rating
+- [x] `docs/appstore/play-metadata.md` — Google Play: title, short/full description, category, tags
+
+### D9 — Privacy policy and support pages
+- [x] `docs/web/privacy.html` — self-contained HTML + inline CSS, dark theme, full privacy policy
+- [x] `docs/web/support.html` — self-contained HTML + inline CSS, dark theme, FAQ + contact
+
+### D10 — Launch checklist and handoff document
+- [x] `docs/LAUNCH_CHECKLIST.md` — infrastructure, credentials, assets, testing, legal, submission sections
+- [x] `docs/HANDOFF.md` — architecture decisions, known limitations, post-launch features, infrastructure cost estimates

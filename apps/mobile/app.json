@@ -70,6 +70,9 @@
           "icon": "./assets/notification-icon.png",
           "color": "#000000"
         }
+      ],
+      [
+        "expo-local-authentication"
       ]
     ],
     "extra": {

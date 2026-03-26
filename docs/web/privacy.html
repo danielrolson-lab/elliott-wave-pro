@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Elliott Wave Pro</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #000000;
+      --surface:  #111111;
+      --border:   #222222;
+      --text:     #e8e8e8;
+      --muted:    #888888;
+      --accent:   #4ade80;
+      --link:     #60a5fa;
+      --radius:   8px;
+      --max-w:    720px;
+    }
+
+    html { font-size: 16px; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.7;
+      padding: 0 16px 80px;
+    }
+
+    header {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      text-decoration: none;
+    }
+    .logo-wave {
+      width: 40px;
+      height: 40px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+    .logo-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    main {
+      max-width: var(--max-w);
+      margin: 48px auto 0;
+    }
+
+    h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 40px 0 12px;
+      color: var(--text);
+    }
+    h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 24px 0 8px;
+      color: var(--text);
+    }
+    p { margin-bottom: 16px; color: var(--text); }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    ul, ol { margin: 0 0 16px 24px; }
+    li { margin-bottom: 6px; }
+
+    .highlight-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }
+    .highlight-box p { margin: 0; font-size: 15px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+    th {
+      text-align: left;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    td {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: #0a0a0a; }
+
+    footer {
+      max-width: var(--max-w);
+      margin: 64px auto 0;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="https://elliottwave.pro">
+    <div class="logo-wave">EW</div>
+    <span class="logo-name">Elliott Wave Pro</span>
+  </a>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Effective date: March 1, 2026 &nbsp;·&nbsp; Last updated: March 26, 2026</p>
+</header>
+
+<main>
+
+  <div class="highlight-box">
+    <p><strong>Short version:</strong> We collect only what is necessary to run the app. We do not sell your data. We do not serve ads. Your trade journal and watchlist are yours.</p>
+  </div>
+
+  <h2>1. Who We Are</h2>
+  <p>Elliott Wave Pro ("we," "us," "our") is a mobile application available on iOS and Android. For privacy inquiries, contact us at <a href="mailto:daniel.r.olson@gmail.com">daniel.r.olson@gmail.com</a>.</p>
+
+  <h2>2. Information We Collect</h2>
+
+  <h3>2.1 Account Data</h3>
+  <p>When you create an account, we collect your email address and a hashed password (managed by Supabase Auth). You may optionally provide a display name. If you sign in with Apple or Google, we receive only the identifier and email that those platforms choose to share.</p>
+
+  <h3>2.2 Usage Data (On-Device)</h3>
+  <p>The following data is stored locally on your device using encrypted MMKV storage and is never transmitted unless you explicitly sync it:</p>
+  <ul>
+    <li>Watchlist tickers and sort order</li>
+    <li>Theme preference (dark/light/system)</li>
+    <li>Chart configuration (timeframe, overlays)</li>
+    <li>Trade journal entries (synced to your Supabase account)</li>
+  </ul>
+
+  <h3>2.3 Data Synced to Supabase</h3>
+  <p>When you are signed in, the following data is synced to your account in our Supabase database (hosted in the United States):</p>
+  <ul>
+    <li>Watchlist (tickers, sort order)</li>
+    <li>Alerts (conditions, delivery channels — no push notification tokens stored server-side)</li>
+    <li>Trade journal entries (ticker, direction, entry/exit prices, notes)</li>
+    <li>Subscription tier (mirrored from RevenueCat)</li>
+  </ul>
+
+  <h3>2.4 Subscription and Payment</h3>
+  <p>In-app purchases are processed by Apple App Store or Google Play. We never receive or store your payment card details. Subscription status is managed by <strong>RevenueCat</strong>. RevenueCat receives a pseudonymous user ID; we do not share your email address with RevenueCat.</p>
+
+  <h3>2.5 Market Data</h3>
+  <p>Real-time and historical market data is fetched from <strong>Polygon.io</strong>. Your ticker queries are transmitted to Polygon using your device's IP address. We do not log which tickers you look up on our servers.</p>
+
+  <h3>2.6 AI Commentary</h3>
+  <p>When the wave engine generates a commentary request, the current wave count parameters (ticker, wave label, probability, Fibonacci levels, regime) are sent to our <strong>Vercel</strong> proxy server, which forwards them to <strong>Anthropic</strong>'s API. No personally identifiable information is included in these requests. We do not store AI commentary responses on our servers; they are displayed in the app and discarded.</p>
+
+  <h3>2.7 Voice Commands</h3>
+  <p>Voice command processing is performed entirely on-device. Audio is not recorded, stored, or transmitted to any server. Microphone access is used solely for real-time keyword matching.</p>
+
+  <h3>2.8 Crash Reports and Diagnostics</h3>
+  <p>We do not currently integrate a third-party crash reporting SDK. If the app crashes, no diagnostic data is automatically transmitted.</p>
+
+  <h2>3. How We Use Your Information</h2>
+  <ul>
+    <li>To authenticate you and maintain your session</li>
+    <li>To sync your watchlist, alerts, and trade journal across devices</li>
+    <li>To verify your subscription tier and enforce feature gates</li>
+    <li>To generate AI wave commentary (anonymous parameters only)</li>
+    <li>To respond to your support requests</li>
+  </ul>
+  <p>We do not use your data for advertising, behavioural profiling, or any purpose beyond operating the app.</p>
+
+  <h2>4. Third-Party Services</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Service</th>
+        <th>Purpose</th>
+        <th>Data Shared</th>
+        <th>Privacy Policy</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Supabase</td>
+        <td>Database &amp; Auth</td>
+        <td>Email, watchlist, journal, alerts</td>
+        <td><a href="https://supabase.com/privacy">supabase.com/privacy</a></td>
+      </tr>
+      <tr>
+        <td>Polygon.io</td>
+        <td>Market data</td>
+        <td>Ticker query, IP address</td>
+        <td><a href="https://polygon.io/privacy">polygon.io/privacy</a></td>
+      </tr>
+      <tr>
+        <td>RevenueCat</td>
+        <td>Subscription management</td>
+        <td>Pseudonymous user ID, purchase events</td>
+        <td><a href="https://www.revenuecat.com/privacy">revenuecat.com/privacy</a></td>
+      </tr>
+      <tr>
+        <td>Vercel</td>
+        <td>API proxy</td>
+        <td>Wave parameters (no PII)</td>
+        <td><a href="https://vercel.com/legal/privacy-policy">vercel.com/legal/privacy-policy</a></td>
+      </tr>
+      <tr>
+        <td>Anthropic</td>
+        <td>AI commentary</td>
+        <td>Wave parameters (no PII)</td>
+        <td><a href="https://www.anthropic.com/privacy">anthropic.com/privacy</a></td>
+      </tr>
+      <tr>
+        <td>StockTwits</td>
+        <td>Social sentiment</td>
+        <td>Ticker (public API)</td>
+        <td><a href="https://stocktwits.com/legal/privacy">stocktwits.com/legal/privacy</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. Data Retention</h2>
+  <p>Account data is retained for as long as your account is active. Trade journal entries and alerts are retained until you delete them or close your account. Server logs (if any) are retained for no more than 30 days.</p>
+
+  <h2>6. Data Security</h2>
+  <p>All data in transit is encrypted with TLS 1.2 or higher. Data at rest in Supabase is encrypted at the storage layer. MMKV storage on your device is encrypted. Passwords are hashed and never stored in plaintext.</p>
+
+  <h2>7. Your Rights</h2>
+  <p>You have the right to:</p>
+  <ul>
+    <li><strong>Access</strong> the personal data we hold about you</li>
+    <li><strong>Correct</strong> inaccurate data</li>
+    <li><strong>Delete</strong> your account and all associated data</li>
+    <li><strong>Export</strong> your trade journal data</li>
+    <li><strong>Object</strong> to any processing you did not authorise</li>
+  </ul>
+  <p>To exercise any of these rights, email <a href="mailto:daniel.r.olson@gmail.com">daniel.r.olson@gmail.com</a>. We will respond within 30 days.</p>
+
+  <h2>8. GDPR (European Users)</h2>
+  <p>If you are located in the European Economic Area, you have the rights described above under GDPR. Our lawful basis for processing is:</p>
+  <ul>
+    <li><strong>Contract performance</strong> — to provide the app features you signed up for</li>
+    <li><strong>Legitimate interest</strong> — to maintain security and prevent abuse</li>
+    <li><strong>Consent</strong> — for voice microphone access (requested at runtime)</li>
+  </ul>
+
+  <h2>9. CCPA (California Users)</h2>
+  <p>We do not sell personal information. We do not share personal information with third parties for cross-context behavioural advertising. California residents have the right to know, delete, and opt out of sale (there is no sale to opt out of).</p>
+
+  <h2>10. Children</h2>
+  <p>Elliott Wave Pro is not directed at children under 13. We do not knowingly collect personal information from children under 13. If you believe a child under 13 has created an account, please contact us and we will delete it promptly.</p>
+
+  <h2>11. Changes to This Policy</h2>
+  <p>We will notify you of material changes by posting a notice in the app and updating the "Last updated" date above. Continued use of the app after the effective date of a revised policy constitutes your acceptance.</p>
+
+  <h2>12. Contact</h2>
+  <p>For privacy questions or data deletion requests:</p>
+  <ul>
+    <li>Email: <a href="mailto:daniel.r.olson@gmail.com">daniel.r.olson@gmail.com</a></li>
+    <li>Website: <a href="https://elliottwave.pro/support">elliottwave.pro/support</a></li>
+  </ul>
+
+</main>
+
+<footer>
+  <span>© 2026 Elliott Wave Pro. All rights reserved.</span>
+  <span><a href="https://elliottwave.pro/support">Support</a> &nbsp;·&nbsp; <a href="https://elliottwave.pro">Home</a></span>
+</footer>
+
+</body>
+</html>
