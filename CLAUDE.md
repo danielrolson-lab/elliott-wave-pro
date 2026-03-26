@@ -4,7 +4,7 @@ Monorepo: `pnpm` workspaces.
 Mobile app: `apps/mobile` (Expo SDK 51, React Native 0.74, TypeScript strict).
 Engine: `packages/wave-engine` (pure TS, Vitest, no RN deps).
 
-**Current phase: Phase 2**
+**Current phase: Phase 3**
 
 ---
 
@@ -210,3 +210,93 @@ See **Phase 2 Readiness** section at the bottom of this file.
 | Watchlist sparklines | Empty until `marketData.candles` populated |
 | TickerDetail screen | Screen registered in ChartStack but not yet built |
 | Flow tab | Replaced by live feed in D5 |
+
+---
+
+## Phase 3 Deliverables
+
+### D1 — Historical wave scanner
+- [x] `services/fastapi/wave-scan.py` — FastAPI endpoint (POST /wave-scan); accepts ticker, timeframe, lookback_days, wave_type
+- [x] Fetches OHLCV from Polygon REST, runs Python wave detection across full history
+- [x] Returns instances with forward returns at 1d/3d/5d/10d/20d and MAE
+- [x] `stores/waveScan.ts` — Zustand store for scan results
+- [x] `services/waveScanService.ts` — Fly.io API client
+- [x] `hooks/useWaveScan.ts` — triggers scan, writes to store
+- [x] `components/scan/AnalogCard.tsx` — mini Skia chart + returns + MAE per analog
+- [x] `app/wave-scan.tsx` — WaveScanResults screen; horizontally scrollable analog cards, aggregate stats
+- [x] `services/fastapi/requirements.txt`, `Dockerfile`, `fly.toml` for Fly.io deploy
+
+### D2 — Setup replay mode
+- [x] `app/replay.tsx` — ReplayScreen; play/pause/step-forward/step-back controls
+- [x] Speed selector: 0.5×/1×/2×/4×; bar-by-bar candle playback with progress bar
+- [x] Wave engine runs on visible slice at each step; shows what engine would have said
+- [x] Gated: requires Pro or Elite subscription
+- [x] `stores/subscription.ts` — subscription tier store (used by replay gate)
+
+### D3 — Trade journal with intelligence layer
+- [x] `stores/journal.ts` — MMKV-persisted journal; auto-populate from chart state; R-multiple P&L; `computeAnalytics()` function
+- [x] `app/journal.tsx` — Log / History / Analytics tabs
+- [x] Auto-fills ticker, wave, regime from active chart state
+- [x] Analytics: win rate by wave, win rate by regime, avg R by instrument, cut-winners-early + hold-losers-long behavioral flags
+- [x] Equity curve (Skia), monthly P&L bar chart
+
+### D4 — Market internals dashboard
+- [x] `stores/internals.ts` — NYSE TICK, TRIN, A/D, new highs/lows, up/down vol, McClellan Osc, % above MAs
+- [x] `hooks/useMarketInternals.ts` — polls Polygon indices every 60s; divergence flag
+- [x] `app/internals.tsx` — TICK sparkline (Skia), stat cards, gauge meters, divergence banner
+
+### D5 — Dark pool feed
+- [x] `stores/darkpool.ts` — ring buffer (200 prints), filter by notional/size/ticker
+- [x] `hooks/useDarkPoolFeed.ts` — polls Polygon trades API filtering dark venue exchange codes; wave context annotation
+- [x] `components/darkpool/DarkPoolList.tsx` — color rows, LARGE badge, accumulation signal flag
+- [x] `app/darkpool.tsx` — DarkPoolScreen with filter bar
+
+### D6 — Multi-ticker wave summary grid
+- [x] `app/wave-grid.tsx` — WaveGridScreen; sortable table (probability/wave/% to target)
+- [x] Columns: Ticker, Wave, Structure, Probability bar, Next Target, Invalidation, Regime badge
+- [x] One tap → navigates to Chart tab
+
+### D7 — Quant API layer
+- [x] `services/proxy/quant-api.ts` — Vercel Edge Functions: GET wave-count, scenarios, regime, gex, signals
+- [x] `services/proxy/wave-stream.ts` — Node.js WebSocket server (Fly.io); emits probability_change / count_flip / invalidation_hit / target_reached events
+- [x] Supabase postgres_changes → WebSocket bridge for live wave events
+- [x] API key auth via Supabase `api_keys` table; daily rate limiting by tier (free 50/pro 5000/elite 50000)
+- [x] Upstash Redis 30s signal cache shared across users on same ticker
+
+### D8 — Earnings volatility tool
+- [x] `utils/earningsEngine.ts` — implied vs historical move, IV crush estimator, strategy selector
+- [x] `stores/earnings.ts` — Zustand earnings store
+- [x] `hooks/useEarnings.ts` — fetches Polygon financials, computes historical moves, enriches with wave context
+- [x] `app/earnings.tsx` — EarningsScreen; countdown, implied/historical bar chart, IV crush estimate, strategy card, historical table
+
+### D9 — Correlation matrix
+- [x] `utils/correlationEngine.ts` — Pearson R, rolling log-return correlation matrix, breakdown detection
+- [x] `stores/correlation.ts` — current + prior (40d) matrix store
+- [x] `hooks/useCorrelation.ts` — fetches daily closes, builds 20d/40d matrices; refreshes once per day
+- [x] `app/correlation.tsx` — CorrelationScreen; NxN heatmap cells (color-coded), breakdown alerts, top-pairs bar chart
+
+### D10 — Monetization
+- [x] `stores/subscription.ts` — RevenueCat-backed tier store; `FEATURE_GATES` map
+- [x] `hooks/useRevenueCat.ts` — initializes Purchases SDK, syncs CustomerInfo, mirrors tier to Supabase profiles
+- [x] `components/paywall/PaywallScreen.tsx` — monthly/annual billing toggle, Pro/Elite plan cards, feature lists, restore purchases
+- [x] Products: pro_monthly $24.99 / pro_annual $199 / elite_monthly $59.99 / elite_annual $499
+- [x] `types/react-native-purchases.d.ts` — type stubs (full types with npm install)
+
+### Navigation & wiring
+- [x] `navigation/AppNavigator.tsx` — RootStack wraps MainTabs + all Phase 3 screens
+- [x] `app/settings.tsx` — Phase 3 feature links with tier gates; Upgrade button; subscription badge
+- [x] `hooks/useRevenueCat` wired into AppNavigator bootstrap
+
+---
+
+## Pre-App-Store TODO (Phase 3 remaining work)
+| Feature | Status |
+|---|---|
+| `pnpm install react-native-purchases` + native link | Run before iOS build |
+| Fly.io deploy for wave-scan FastAPI | `fly deploy` from `services/fastapi/` |
+| Fly.io deploy for wave-stream WebSocket | `fly deploy` from `services/proxy/` after build |
+| RevenueCat products configured in App Store Connect | Create in-app purchases |
+| Supabase tables: `api_keys`, `wave_counts`, `market_regimes`, `gex_levels` | Run migrations |
+| TickerDetail screen | Stub registered in navigator — needs implementation |
+| VIX / 10Y / DXY live data on Home screen | Replace `// TODO` placeholder |
+| `% above 20/50/200 MA` internals | Polygon doesn't provide directly — needs S&P 500 members batch |

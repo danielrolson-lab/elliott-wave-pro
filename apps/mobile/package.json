@@ -22,6 +22,7 @@
     "expo-auth-session": "^55.0.9",
     "expo-crypto": "^55.0.10",
     "expo-linking": "^55.0.8",
+    "expo-notifications": "^0.28.19",
     "expo-status-bar": "~1.12.1",
     "expo-web-browser": "^55.0.10",
     "immer": "^10.1.1",
@@ -34,7 +35,9 @@
     "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "^4.24.0",
     "react-navigation": "^5.0.0",
-    "zustand": "^4.5.4"
+    "zustand": "^4.5.4",
+    "react-native-purchases": "^7.26.1",
+    "ws": "^8.17.1"
   },
   "devDependencies": {
     "@types/react": "~18.2.79",
