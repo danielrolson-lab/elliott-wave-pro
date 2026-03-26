@@ -19,6 +19,8 @@ import { useIndicatorStore }   from '../stores/indicators';
 import { useGEXStore }         from '../stores/gex';
 import { useOptionsStore }     from '../stores/options';
 import { deliverAlert }        from '../services/alertDelivery';
+import { fetchAlertInterpretation } from '../services/alertIntelligenceService';
+import { useAlertDetailStore } from '../stores/alertDetail';
 
 const POLL_MS = 5_000;
 
@@ -140,12 +142,54 @@ export function useAlertEngine(): void {
 
         if (allMet) {
           markTriggered(alert.id);
-          const firstCond = alert.conditions[0];
-          const ticker    = firstCond?.ticker ?? '';
-          const message   = buildMessage(alert.label, alert.conditions);
-          deliverAlert(alert, { ticker, message }).catch((e) =>
-            console.warn('[useAlertEngine] delivery failed', e),
-          );
+          const firstCond  = alert.conditions[0];
+          const ticker     = firstCond?.ticker ?? '';
+          const firstPrice = ctx.quotes[ticker]?.last ?? firstCond?.value ?? 0;
+          const primaryCount = ctx.counts[`${ticker}_5m`]?.[0] ?? null;
+          const regime     = ctx.regimes[ticker] ?? null;
+
+          // Fetch AI interpretation (non-blocking)
+          fetchAlertInterpretation({
+            ticker,
+            alertType:    firstCond?.type ?? 'price_cross',
+            triggerPrice: firstCond?.value ?? firstPrice,
+            currentPrice: firstPrice,
+            waveLabel:    primaryCount?.currentWave?.label != null
+              ? String(primaryCount.currentWave.label)
+              : null,
+            waveStructure: primaryCount?.currentWave?.structure ?? null,
+            regime,
+            gexLevel:     ctx.gex.levels[ticker]?.zeroGex
+              ? `Zero GEX at $${ctx.gex.levels[ticker]!.zeroGex!.toFixed(2)}`
+              : null,
+            probability:  primaryCount?.posterior?.posterior ?? null,
+            alertNote:    alert.label,
+          }).then((interpretation) => {
+            // Store context snapshot for alert-detail screen
+            useAlertDetailStore.getState().addDetail({
+              alertId:       alert.id,
+              label:         alert.label,
+              ticker,
+              interpretation,
+              triggeredAt:   Date.now(),
+              triggerPrice:  firstPrice,
+              waveLabel:     primaryCount?.currentWave?.label != null
+                ? String(primaryCount.currentWave.label)
+                : null,
+              regime,
+              probability:   primaryCount?.posterior?.posterior ?? null,
+            });
+
+            const message = interpretation;
+            deliverAlert(alert, { ticker, message }).catch((e) =>
+              console.warn('[useAlertEngine] delivery failed', e),
+            );
+          }).catch(() => {
+            const message = buildMessage(alert.label, alert.conditions);
+            deliverAlert(alert, { ticker, message }).catch((e) =>
+              console.warn('[useAlertEngine] delivery failed', e),
+            );
+          });
         }
       }
     }, POLL_MS);

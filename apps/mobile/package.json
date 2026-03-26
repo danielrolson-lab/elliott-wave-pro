@@ -37,7 +37,8 @@
     "react-navigation": "^5.0.0",
     "zustand": "^4.5.4",
     "react-native-purchases": "^7.26.1",
-    "ws": "^8.17.1"
+    "ws": "^8.17.1",
+    "@shopify/flash-list": "^1.6.3"
   },
   "devDependencies": {
     "@types/react": "~18.2.79",

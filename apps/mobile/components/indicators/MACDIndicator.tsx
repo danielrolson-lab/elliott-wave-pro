@@ -284,3 +284,6 @@ export function MACDIndicator({
 const styles = StyleSheet.create({
   canvas: { backgroundColor: CHART_COLORS.background },
 });
+
+const MACDIndicatorMemo = React.memo(MACDIndicator);
+export { MACDIndicatorMemo as MACDIndicatorMemo };

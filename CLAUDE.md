@@ -4,7 +4,7 @@ Monorepo: `pnpm` workspaces.
 Mobile app: `apps/mobile` (Expo SDK 51, React Native 0.74, TypeScript strict).
 Engine: `packages/wave-engine` (pure TS, Vitest, no RN deps).
 
-**Current phase: Phase 3**
+**Current phase: Phase 4**
 
 ---
 
@@ -300,3 +300,76 @@ See **Phase 2 Readiness** section at the bottom of this file.
 | TickerDetail screen | Stub registered in navigator — needs implementation |
 | VIX / 10Y / DXY live data on Home screen | Replace `// TODO` placeholder |
 | `% above 20/50/200 MA` internals | Polygon doesn't provide directly — needs S&P 500 members batch |
+
+---
+
+## Phase 4 Deliverables
+
+### D1 — AI scenario commentary
+- [x] `services/proxy/ai-commentary.ts` — Vercel Edge Function; calls Anthropic claude-sonnet-4-20250514; ANTHROPIC_API_KEY server-side only
+- [x] `stores/commentary.ts` — commentary text per wave count ID, loading state
+- [x] `hooks/useScenarioCommentary.ts` — triggers on primary scenario probability change >5%; debounced
+- [x] `components/scenarios/ScenarioCommentary.tsx` — expandable text block below primary ScenarioCard
+
+### D2 — Voice navigation
+- [x] `components/voice/VoiceCommandHandler.tsx` — keyword matching engine, command dispatch
+- [x] `hooks/useVoiceCommand.ts` — expo-speech + expo-av recording, transcription, command execution
+- [x] Microphone button on chart header; pulsing indicator while listening
+- [x] Recognized command text displayed before execution
+- [x] Commands: show [timeframe] chart for [ticker], primary wave count, show/hide wave labels/fibonacci, switch dark/light mode, open options chain, put/call wall
+
+### D3 — Social sentiment overlay
+- [x] `services/stocktwits.ts` — StockTwits public API client; fetch symbol sentiment
+- [x] `stores/sentiment.ts` — bullish%, bearish%, message volume per ticker; refresh timestamp
+- [x] `hooks/useSentiment.ts` — polls every 5 min; computes divergence flag (price rising, sentiment falling)
+- [x] `components/sentiment/SentimentOverlay.tsx` — bar + volume + divergence badge; color: green>60%, red<40%, amber else
+- [x] Wave context warning: high bullish sentiment at Wave 5 top
+
+### D4 — Multi-chart layout for iPad
+- [x] `components/chart/ChartGrid.tsx` — 2×2 grid of CandlestickChart; top-4 watchlist tickers
+- [x] iPad detection via `useWindowDimensions` (width > 768)
+- [x] Tap any cell to expand full screen; tap again to collapse
+- [x] Compare mode: 2 chart price series normalized to 100 at shared start date
+- [x] Wired into `app/chart.tsx` when on iPad
+
+### D5 — Earnings playbook
+- [x] `components/earnings/EarningsPlaybook.tsx` — bottom sheet; appears when earnings ≤7 days away
+- [x] Sections: countdown, IV rank badge, implied move (nearest weekly), 8-quarter historical bar chart (Skia), strategy card, IV crush estimate, extended wave warning
+- [x] Pulls data from `earningsEngine` + `useEarnings` hook (already built in Phase 3)
+
+### D6 — Alert intelligence
+- [x] `services/proxy/alert-intelligence.ts` — Vercel Edge Function; Anthropic API; generates 1-sentence interpretation
+- [x] `services/alertIntelligenceService.ts` — client; sends alert context (ticker, wave, regime, price, gex) to proxy
+- [x] `hooks/useAlertEngine.ts` — updated to call AI interpretation on trigger; include in notification body
+- [x] `app/alert-detail.tsx` — post-trigger screen: scenario context at moment fired, OHLCV around trigger
+- [x] Wired into AppNavigator root stack
+
+### D7 — App Store preparation
+- [x] `app.json` — bundle ID com.elliottwave.pro, version 1.0.0, iOS 16.0+, Android minSdkVersion 26
+- [x] `eas.json` — production build profile (autoIncrement, distribution: store)
+- [ ] `assets/icon.png` — 1024×1024 (requires design tool; see docs/appstore/icon-spec.md)
+- [ ] `assets/splash-icon.png` — 512×512 splash icon (requires design tool)
+- [x] `docs/appstore/metadata.txt` — name, subtitle, description, keywords, category
+- [x] `docs/appstore/privacy-policy.md` — data collection disclosure, no data sale, Supabase storage
+
+### D8 — Final QA pass
+- [x] tsc --noEmit clean
+- [x] All screens reviewed: auth, home, watchlist, chart, flow, settings, all Phase 3 screens
+- [x] Bottom tab icons visible in dark and light mode
+- [x] Wave label overlap fix at default zoom
+- [x] No unused imports or variables across modified files
+
+### D9 — Performance optimization
+- [x] `React.memo` on all chart layer components (CandlestickChart, WaveOverlayLayer, FibonacciOverlayLayer, GEXOverlayLayer, IndicatorPanel layers)
+- [x] `useMemo` guards on wave engine inputs in `useWaveEngine.ts`
+- [x] Zustand selectors use `shallow` equality where arrays/objects returned (ScenarioPanel)
+- [x] `FlashList` (Shopify) replaces `FlatList` in watchlist
+- [x] `components/indicators/*.tsx` wrapped in React.memo
+
+### D10 — Documentation and handoff
+- [x] `docs/ARCHITECTURE.md` — full system design, text diagram of all components and data flows
+- [x] `docs/API.md` — all Quant API endpoints with request/response examples
+- [x] `docs/DEPLOYMENT.md` — Vercel, Fly.io, Supabase step-by-step
+- [x] `docs/CONTRIBUTING.md` — coding standards, CLAUDE.md rules in developer format
+- [x] `docs/CHANGELOG.md` — all features across Phases 1–4 by version
+- [x] `README.md` — setup instructions, feature list, screenshots placeholder

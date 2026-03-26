@@ -40,6 +40,7 @@ import { DarkPoolScreen }       from '../app/darkpool';
 import { WaveGridScreen }       from '../app/wave-grid';
 import { EarningsScreen }       from '../app/earnings';
 import { CorrelationScreen }    from '../app/correlation';
+import { AlertDetailScreen }    from '../app/alert-detail';
 import { PaywallScreen }        from '../components/paywall/PaywallScreen';
 import { supabase }             from '../utils/supabase';
 import { useAuthStore }         from '../stores/auth';
@@ -81,6 +82,7 @@ export type Phase3StackParamList = {
   WaveGrid:    undefined;
   Earnings:    undefined;
   Correlation: undefined;
+  AlertDetail: { alertId: string };
   Paywall:     { requiredTier?: 'pro' | 'elite' };
 };
 
@@ -193,7 +195,8 @@ function RootNavigator() {
       <RootStack.Screen name="DarkPool"   component={DarkPoolScreen}   options={{ title: 'Dark Pool' }} />
       <RootStack.Screen name="WaveGrid"   component={WaveGridScreen}   options={{ title: 'Wave Grid' }} />
       <RootStack.Screen name="Earnings"   component={EarningsScreen}   options={{ title: 'Earnings Vol' }} />
-      <RootStack.Screen name="Correlation" component={CorrelationScreen} options={{ title: 'Correlations' }} />
+      <RootStack.Screen name="Correlation"  component={CorrelationScreen}  options={{ title: 'Correlations' }} />
+      <RootStack.Screen name="AlertDetail" component={AlertDetailScreen} options={{ title: 'Alert Detail' }} />
       <RootStack.Screen
         name="Paywall"
         options={{ title: 'Upgrade', presentation: 'modal' }}

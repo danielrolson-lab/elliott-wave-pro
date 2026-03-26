@@ -24,8 +24,10 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, { LinearTransition } from 'react-native-reanimated';
+import { useShallow } from 'zustand/react/shallow';
 import { useWaveCountStore } from '../../stores/waveCount';
 import { ScenarioCard } from './ScenarioCard';
+import { ScenarioCommentary } from './ScenarioCommentary';
 import { DARK } from '../../theme/colors';
 
 // ── Layout spring config ──────────────────────────────────────────────────────
@@ -48,7 +50,7 @@ export interface ScenarioPanelProps {
 
 export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
   const counts = useWaveCountStore(
-    (s) => s.counts[`${ticker}_${timeframe}`] ?? [],
+    useShallow((s) => s.counts[`${ticker}_${timeframe}`] ?? []),
   );
   const [showInfo, setShowInfo] = useState(false);
 
@@ -95,6 +97,9 @@ export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
           <ScenarioCard count={count} rank={index} />
         </Animated.View>
       ))}
+
+      {/* ── AI commentary (primary count only) ── */}
+      <ScenarioCommentary ticker={ticker} timeframe={timeframe} />
     </View>
   );
 }

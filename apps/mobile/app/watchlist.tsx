@@ -18,11 +18,11 @@ import {
   View,
   Text,
   TextInput,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   type ListRenderItemInfo,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -620,10 +620,11 @@ export function WatchlistScreen() {
             <Text style={styles.emptyBody}>Search for a ticker above to add it to your watchlist.</Text>
           </View>
         ) : (
-          <FlatList
+          <FlashList
             data={items}
             keyExtractor={keyExtractor}
             renderItem={renderItem}
+            estimatedItemSize={96}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.list}
           />

@@ -7,7 +7,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSharedValue } from 'react-native-reanimated';
 import { CandlestickChart }  from '../components/chart/CandlestickChart';
@@ -21,20 +21,33 @@ import { useGEXLevels }          from '../hooks/useGEXLevels';
 import { useRegimeClassifier }   from '../hooks/useRegimeClassifier';
 import { useL2WebSocket }        from '../hooks/useL2WebSocket';
 import { useCVD }               from '../hooks/useCVD';
+import { useScenarioCommentary } from '../hooks/useScenarioCommentary';
 import { useMarketDataStore }    from '../stores/marketData';
 import { useGEXStore }         from '../stores/gex';
 import { ScenarioPanel }       from '../components/scenarios/ScenarioPanel';
 import { DepthLadder }         from '../components/l2/DepthLadder';
 import { TimeAndSales }        from '../components/l2/TimeAndSales';
 import { DecayMeter }          from '../components/chart/DecayMeter';
+import { VoiceCommandHandler } from '../components/voice/VoiceCommandHandler';
+import { SentimentOverlay }   from '../components/sentiment/SentimentOverlay';
+import { useSentiment }       from '../hooks/useSentiment';
+import { ChartGrid }          from '../components/chart/ChartGrid';
+import { EarningsPlaybook, EarningsCountdownBadge } from '../components/earnings/EarningsPlaybook';
+import { useEarnings }        from '../hooks/useEarnings';
 import { DARK }                from '../theme/colors';
 
 const ACTIVE_TICKER = 'SPY';
 
+const IPAD_MIN_WIDTH = 768;
+
 export function ChartScreen() {
-  const [timeframe, setTimeframe] = useState<TimeframeOption>('5m');
-  const [showL2, setShowL2]       = useState(false);
-  const [l2Tab,  setL2Tab]        = useState<'depth' | 'tape'>('depth');
+  const [timeframe,    setTimeframe]    = useState<TimeframeOption>('5m');
+  const [showL2,       setShowL2]       = useState(false);
+  const [l2Tab,        setL2Tab]        = useState<'depth' | 'tape'>('depth');
+  const [compareMode,     setCompareMode]     = useState(false);
+  const [showPlaybook,    setShowPlaybook]    = useState(false);
+  const { width: screenW } = useWindowDimensions();
+  const isIPad = screenW > IPAD_MIN_WIDTH;
 
   // Backfill real historical candles from Polygon REST
   const { status, error } = usePolygonCandles(ACTIVE_TICKER, timeframe);
@@ -53,6 +66,9 @@ export function ChartScreen() {
   useRegimeClassifier(ACTIVE_TICKER, timeframe, candles);
   useL2WebSocket(ACTIVE_TICKER);
   useCVD(ACTIVE_TICKER, timeframe, candles);
+  useScenarioCommentary(ACTIVE_TICKER, timeframe);
+  useSentiment(ACTIVE_TICKER);
+  useEarnings(ACTIVE_TICKER);
   const gexLevels = useGEXStore((s) => s.levels[ACTIVE_TICKER] ?? null);
 
   const overlays = useMemo(() => ({
@@ -70,7 +86,22 @@ export function ChartScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.container}>
-        <TimeframeSelector activeTimeframe={timeframe} onSelect={setTimeframe} />
+        <View style={styles.chartHeader}>
+          <TimeframeSelector activeTimeframe={timeframe} onSelect={setTimeframe} />
+          {isIPad && (
+            <Pressable
+              style={[styles.comparePill, compareMode && styles.comparePillActive]}
+              onPress={() => setCompareMode((v) => !v)}
+            >
+              <Text style={styles.comparePillText}>{compareMode ? 'Grid' : 'Compare'}</Text>
+            </Pressable>
+          )}
+          <VoiceCommandHandler />
+        </View>
+
+        {isIPad && (
+          <ChartGrid timeframe={timeframe} compareMode={compareMode} />
+        )}
 
         {status === 'loading' && candles.length === 0 && (
           <View style={styles.loadingOverlay}>
@@ -142,7 +173,15 @@ export function ChartScreen() {
               candleW={candleW}
               font={null}
             />
+            <EarningsCountdownBadge ticker={ACTIVE_TICKER} onPress={() => setShowPlaybook(true)} />
             <ScenarioPanel ticker={ACTIVE_TICKER} timeframe={timeframe} />
+            <SentimentOverlay ticker={ACTIVE_TICKER} timeframe={timeframe} />
+            <EarningsPlaybook
+              ticker={ACTIVE_TICKER}
+              timeframe={timeframe}
+              visible={showPlaybook}
+              onClose={() => setShowPlaybook(false)}
+            />
           </>
         )}
       </View>
@@ -158,6 +197,28 @@ const styles = StyleSheet.create({
   container: {
     flex:            1,
     backgroundColor: CHART_COLORS.background,
+  },
+  chartHeader: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    paddingRight:      8,
+  },
+  comparePill: {
+    paddingHorizontal: 10,
+    paddingVertical:   4,
+    borderRadius:      4,
+    borderWidth:       1,
+    borderColor:       DARK.border,
+    marginRight:       6,
+  },
+  comparePillActive: {
+    backgroundColor: '#1d4ed8',
+    borderColor:     '#1d4ed8',
+  },
+  comparePillText: {
+    color:    DARK.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
   },
 
   // L2 side-panel layout

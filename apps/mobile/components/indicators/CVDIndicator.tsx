@@ -274,3 +274,6 @@ const styles = StyleSheet.create({
     backgroundColor: CHART_COLORS.background,
   },
 });
+
+const CVDIndicatorMemo = React.memo(CVDIndicator);
+export { CVDIndicatorMemo as CVDIndicatorMemo };

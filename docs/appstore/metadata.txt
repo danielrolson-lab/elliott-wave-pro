@@ -1,0 +1,60 @@
+App Store Metadata — Elliott Wave Pro
+======================================
+
+NAME: Elliott Wave Pro
+SUBTITLE: Institutional Wave Analysis
+BUNDLE ID: com.elliottwave.pro
+VERSION: 1.0.0
+SKU: elliott-wave-pro-v1
+PRIMARY LANGUAGE: English (US)
+CATEGORY (PRIMARY): Finance
+CATEGORY (SECONDARY): Business
+
+KEYWORDS:
+elliott wave, options flow, stock charts, day trading, wave analysis,
+technical analysis, options trading, market analysis, wave count,
+fibonacci, GEX, dark pool, IV rank, earnings, market internals
+
+DESCRIPTION:
+Elliott Wave Pro is the only mobile trading app that combines institutional
+Elliott Wave analysis with real-time options flow, dark pool prints, and
+AI-powered scenario commentary — all in a single, professional-grade platform
+built for serious market participants.
+
+The Wave Engine automatically identifies Elliott Wave impulse and corrective
+structures using Bayesian probability scoring across eight independent factors:
+Fibonacci confluence, volume profile, RSI divergence, MACD momentum,
+multi-timeframe alignment, time symmetry, market breadth, and GEX (Gamma
+Exposure) regime. Each wave count comes with a probability estimate, four
+ranked scenarios, specific price targets, and a stop/invalidation level.
+
+Options professionals get a full options chain with Greeks (Delta, Gamma,
+Vanna, Charm), IV surface term structure and skew charts, real-time flow feed
+sorted by premium with sweep/block/unusual detection, and an earnings
+playbook that computes implied vs historical move, IV crush estimates, and
+strategy recommendations for any upcoming earnings event. The GEX overlay
+plots dealer gamma exposure levels directly on your chart, showing the Zero
+GEX (gamma flip) level, Call Wall, and Put Wall.
+
+For institutional traders, Elliott Wave Pro includes a Level 2 depth ladder
+and Time & Sales tape with Lee-Ready aggressor detection, a Cumulative Volume
+Delta indicator, a dark pool feed sourced from FINRA OTC prints, market
+internals (NYSE TICK, TRIN, A/D line, McClellan Oscillator, breadth),
+correlation matrix across your watchlist, and a Wave Scanner that matches
+current price action against 2+ years of historical analogs. The Trade
+Journal auto-fills entry data from the active chart state and tracks R-multiple
+performance with behavioral bias detection. AI scenario commentary from
+Claude analyzes each wave count in plain English and updates when probability
+shifts more than 5%.
+
+SUPPORT URL: https://elliottwave.pro/support
+MARKETING URL: https://elliottwave.pro
+PRIVACY POLICY URL: https://elliottwave.pro/privacy
+
+WHAT'S NEW (v1.0.0):
+Initial release — Elliott Wave Engine v1.0, options flow, dark pool feed,
+AI commentary, market internals, earnings playbook, correlation matrix,
+wave scanner, trade journal, multi-chart iPad layout.
+
+AGE RATING: 4+ (no objectionable content; financial data only)
+CONTENT RIGHTS: This app does not contain, show, or access third-party content.

@@ -207,3 +207,6 @@ export function VolumeIndicator({
 const styles = StyleSheet.create({
   canvas: { backgroundColor: CHART_COLORS.background },
 });
+
+const VolumeIndicatorMemo = React.memo(VolumeIndicator);
+export { VolumeIndicatorMemo as VolumeIndicatorMemo };

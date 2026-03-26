@@ -235,3 +235,9 @@ export function RSIIndicator({
 const styles = StyleSheet.create({
   canvas: { backgroundColor: CHART_COLORS.background },
 });
+
+// Memoized export — prevents re-renders when parent re-renders without prop changes
+const RSIIndicatorMemo = React.memo(RSIIndicator);
+export { RSIIndicatorMemo as RSIIndicatorMemo };
+
+// Performance: prevent re-render when props haven't changed
