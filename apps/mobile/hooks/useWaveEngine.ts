@@ -1,9 +1,16 @@
 /**
- * useWaveEngine.ts
+ * useWaveEngine.ts  (v2 — incremental Bayesian + MTF alignment)
  *
- * On each new candle (close event), slices the last 200 bars, runs the full
+ * On each new candle close, slices the last 200 bars, runs the full
  * wave-engine pipeline, and writes the top-2 scored WaveCounts to the Zustand
  * waveCount store.
+ *
+ * v2 upgrades:
+ *   - Passes existing posteriors from the store so the probability engine can
+ *     apply incremental Bayesian updates (prior = decayed previous posterior).
+ *   - Computes multi-timeframe alignment scores by checking whether the top
+ *     wave count on each higher timeframe agrees in direction with each
+ *     candidate count on the current timeframe.
  *
  * Returns the counts and the slice offset so the chart overlay can convert
  * pivot bar indices to absolute indices in the full candle array.
@@ -21,7 +28,7 @@ import { useWaveCountStore } from '../stores/waveCount';
 const MAX_CANDLES = 200;
 const EMPTY: WaveCount[] = [];
 
-// ── RSI (14-period, simple) ───────────────────────────────────────────────────
+// ── RSI (14-period, Wilder) ───────────────────────────────────────────────────
 
 function computeRSI14(closes: readonly number[]): number {
   const n = closes.length;
@@ -54,7 +61,62 @@ function computeMACDHistogram(closes: readonly number[]): number {
   return lastEMA(closes, 12) - lastEMA(closes, 26);
 }
 
-// ── Hook ─────────────────────────────────────────────────────────────────────
+// ── MTF alignment ─────────────────────────────────────────────────────────────
+
+/**
+ * Maps each timeframe to the higher timeframes used for MTF alignment scoring.
+ * Per spec: +20 probability bonus when TF and a higher TF agree on direction.
+ */
+const HIGHER_TFS: Readonly<Record<string, readonly string[]>> = {
+  '1m':  ['5m', '15m'],
+  '5m':  ['1h', '4h'],
+  '15m': ['1h', '4h'],
+  '30m': ['1h', '4h'],
+  '1h':  ['4h', '1D'],
+  '4h':  ['1D'],
+  '1D':  ['1W'],
+  '1W':  [],
+};
+
+function isBullishCount(count: WaveCount): boolean {
+  const w1 = count.allWaves.find((w) => w.label === '1');
+  if (!w1 || !w1.endPivot) return false;
+  return w1.startPivot.price < w1.endPivot.price;
+}
+
+/**
+ * Returns a score in [0, 1] for how aligned this count's direction is with
+ * the top count on each higher timeframe.
+ *
+ * 0.9 = all higher TFs agree
+ * 0.5 = no higher TF data (neutral)
+ * 0.2 = all higher TFs conflict
+ */
+function computeMtfScore(
+  ticker: string,
+  timeframe: string,
+  isBullish: boolean,
+  allCounts: Readonly<Record<string, WaveCount[]>>,
+): number {
+  const higherTfs = HIGHER_TFS[timeframe] ?? [];
+  if (higherTfs.length === 0) return 0.5;
+
+  let agreeing = 0;
+  let conflicting = 0;
+
+  for (const htf of higherTfs) {
+    const htfTop = allCounts[`${ticker}_${htf}`]?.[0];
+    if (!htfTop) continue;
+    if (isBullishCount(htfTop) === isBullish) agreeing++;
+    else conflicting++;
+  }
+
+  if (agreeing > 0 && conflicting === 0) return 0.9;
+  if (conflicting > 0 && agreeing === 0) return 0.2;
+  return 0.5; // mixed or no data
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
 export interface UseWaveEngineResult {
   waveCounts: WaveCount[];
@@ -71,23 +133,23 @@ export function useWaveEngine(
     waveCounts: EMPTY,
     sliceOffset: 0,
   });
-  // Track last processed length so we only re-run on new candle close
   const prevLen = useRef(0);
 
   useEffect(() => {
     if (candles.length < 20) return;
-    // Same candle count → no new close event, skip
     if (candles.length === prevLen.current) return;
+
+    const candlesSinceUpdate = candles.length - prevLen.current;
     prevLen.current = candles.length;
 
     const sliceOffset = Math.max(0, candles.length - MAX_CANDLES);
     const slice = candles.slice(sliceOffset) as OHLCV[];
 
     // Step 1: detect pivots
-    const pivots = detectPivots(slice);
+    const pivots = detectPivots(slice, 0.5, timeframe);
     if (pivots.length < 6) return;
 
-    // Step 2: generate all valid wave counts
+    // Step 2: generate all valid wave counts (impulse + diagonal)
     const counts = generateWaveCounts(pivots, ticker, timeframe);
     if (counts.length === 0) return;
 
@@ -96,13 +158,33 @@ export function useWaveEngine(
     const rsi  = computeRSI14(closes);
     const macd = computeMACDHistogram(closes);
 
-    // Step 4: score and take top 2
-    const scored = scoreWaveCounts(counts, slice, rsi, macd);
-    const top2   = scored.slice(0, 2);
+    // Step 4: gather existing posteriors from store for incremental update
+    const storeState = useWaveCountStore.getState();
+    const storedCounts = storeState.counts[`${ticker}_${timeframe}`] ?? [];
+    const existingPosteriors: Record<string, number> = {};
+    for (const c of storedCounts) {
+      existingPosteriors[c.id] = c.posterior.posterior;
+    }
 
-    const next: UseWaveEngineResult = { waveCounts: top2, sliceOffset };
+    // Step 5: compute MTF alignment scores
+    const allCounts = storeState.counts;
+    const mtfScores: Record<string, number> = {};
+    for (const count of counts) {
+      const isB = isBullishCount(count);
+      mtfScores[count.id] = computeMtfScore(ticker, timeframe, isB, allCounts);
+    }
+
+    // Step 6: score with incremental Bayesian update
+    const scored = scoreWaveCounts(counts, slice, rsi, macd, {
+      existingPosteriors,
+      candlesSinceUpdate,
+      mtfScores,
+    });
+    const top4 = scored.slice(0, 4);
+
+    const next: UseWaveEngineResult = { waveCounts: top4, sliceOffset };
     setResult(next);
-    setCounts(`${ticker}_${timeframe}`, top2);
+    setCounts(`${ticker}_${timeframe}`, top4);
   }, [candles, ticker, timeframe, setCounts]);
 
   return result;

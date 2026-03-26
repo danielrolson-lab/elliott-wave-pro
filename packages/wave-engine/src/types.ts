@@ -16,7 +16,25 @@ export type WaveStructure = 'impulse' | 'zigzag' | 'flat' | 'triangle' | 'leadin
 
 export type PivotType = 'HH' | 'HL' | 'LH' | 'LL';
 
-export type MarketRegime = 'TREND_UP' | 'TREND_DOWN' | 'CHOP' | 'HIGH_VOL';
+export type MarketRegime =
+  | 'STRONG_TREND_UP'
+  | 'WEAK_TREND_UP'
+  | 'STRONG_TREND_DOWN'
+  | 'WEAK_TREND_DOWN'
+  | 'HIGH_VOL_CHOP'
+  | 'LOW_VOL_COMPRESSION';
+
+/** Color for each wave degree label on the chart (per Frost/Prechter convention). */
+export const DEGREE_COLORS: Readonly<Record<WaveDegree, string>> = {
+  grand_supercycle: '#FFD700', // gold
+  supercycle:       '#C0C0C0', // silver
+  cycle:            '#FFFFFF', // white
+  primary:          '#FFFFFF', // white
+  intermediate:     '#D4D4D4', // light gray
+  minor:            '#A0A0A0', // gray
+  minute:           '#6E7681', // dark gray
+  minuette:         '#4E5A64', // dim
+};
 
 export interface Pivot {
   /** Index of this pivot in the source OHLCV array. */
@@ -60,6 +78,8 @@ export interface WavePosterior {
   last_updated: number;
   invalidation_price: number;
   confidence_interval: [number, number];
+  /** True when one or more higher-timeframe counts conflict in direction. */
+  mtf_conflict: boolean;
 }
 
 export interface WaveCount {
@@ -75,6 +95,8 @@ export interface WaveCount {
   rrRatio: number;
   isValid: boolean;
   violations: string[];
+  /** Soft rule warnings — do not invalidate the count but lower its score. */
+  softWarnings: string[];
   createdAt: number;
   updatedAt: number;
 }

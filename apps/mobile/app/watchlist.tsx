@@ -38,6 +38,7 @@ import { useWaveCountStore } from '../stores/waveCount';
 import { useMarketDataStore } from '../stores/marketData';
 import { CHART_COLORS } from '../components/chart/chartTypes';
 import type { Instrument } from '@elliott-wave-pro/wave-engine';
+import { getLeveragedSpec, decayColor, decaySeverity, computeDecay } from '../utils/etfDecayEngine';
 
 // ── MMKV storage ─────────────────────────────────────────────────────────────
 
@@ -176,6 +177,14 @@ function WatchlistCard({ item, onDelete, onDragStart, isDragging }: WatchlistCar
   const posteriors = useWaveCountStore((s) => s.posteriors);
   const quote      = useMarketDataStore((s) => s.quotes[item.id]);
 
+  // Leveraged ETF decay flag
+  const candles5m    = useMarketDataStore((s) => s.candles[`${item.id}_5m`]);
+  const leveragedSpec = getLeveragedSpec(item.id);
+  const decayResult   = leveragedSpec && candles5m && candles5m.length >= 5
+    ? computeDecay(leveragedSpec, candles5m)
+    : null;
+  const decayBadgeColor = decayResult ? decayColor(decaySeverity(decayResult)) : null;
+
   const primaryCount = waveCounts?.[0] ?? null;
   // Bullish = first wave in the count moves up
   const isBullish = primaryCount
@@ -255,6 +264,13 @@ function WatchlistCard({ item, onDelete, onDragStart, isDragging }: WatchlistCar
             <View style={cardStyles.waveBadge}>
               <Text style={cardStyles.waveLabel}>{waveLabel}</Text>
             </View>
+            {decayBadgeColor && (
+              <View style={[cardStyles.decayBadge, { borderColor: decayBadgeColor }]}>
+                <Text style={[cardStyles.decayBadgeText, { color: decayBadgeColor }]}>
+                  ⚠ {decayResult!.leverage > 0 ? '' : '−'}{Math.abs(decayResult!.leverage)}× DECAY
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Center: price + change + prob bar */}
@@ -340,6 +356,19 @@ const cardStyles = StyleSheet.create({
     color:      CHART_COLORS.ema21,
     fontSize:   10,
     fontWeight: '600',
+  },
+  decayBadge: {
+    borderWidth:  1,
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical:   1,
+    alignSelf:   'flex-start',
+    marginTop:   2,
+  },
+  decayBadgeText: {
+    fontSize:  8,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   center: {
     flex: 1,

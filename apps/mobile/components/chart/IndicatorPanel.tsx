@@ -31,12 +31,13 @@ import type { OHLCV } from '@elliott-wave-pro/wave-engine';
 import { RSIIndicator,    INDICATOR_H } from '../indicators/RSIIndicator';
 import { MACDIndicator }   from '../indicators/MACDIndicator';
 import { VolumeIndicator } from '../indicators/VolumeIndicator';
+import { CVDIndicator }    from '../indicators/CVDIndicator';
 import { CHART_COLORS }    from './chartTypes';
 
 // ── Page definitions ──────────────────────────────────────────────────────────
 
-const PAGES = ['RSI 14', 'MACD (12,26,9)', 'Volume'] as const;
-type PageIndex = 0 | 1 | 2;
+const PAGES = ['RSI 14', 'MACD (12,26,9)', 'Volume', 'CVD'] as const;
+type PageIndex = 0 | 1 | 2 | 3;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,18 @@ export function IndicatorPanel({
             translateX={translateX}
             candleW={candleW}
             font={font}
+          />
+        </View>
+
+        {/* Page 3: CVD */}
+        <View style={{ width: screenW }}>
+          <CVDIndicator
+            ticker={ticker}
+            timeframe={timeframe}
+            translateX={translateX}
+            candleW={candleW}
+            font={font}
+            numCandles={candles.length}
           />
         </View>
       </ScrollView>

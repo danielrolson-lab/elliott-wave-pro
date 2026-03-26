@@ -4,6 +4,8 @@ Monorepo: `pnpm` workspaces.
 Mobile app: `apps/mobile` (Expo SDK 51, React Native 0.74, TypeScript strict).
 Engine: `packages/wave-engine` (pure TS, Vitest, no RN deps).
 
+**Current phase: Phase 2**
+
 ---
 
 ## Phase 1 Deliverables
@@ -84,6 +86,94 @@ Engine: `packages/wave-engine` (pure TS, Vitest, no RN deps).
 
 ---
 
+## Phase 2 Deliverables
+
+### D0 — REST backfill hook
+- [x] `hooks/usePolygonCandles.ts` — fetch real OHLCV from Polygon REST `/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from}/{to}`
+- [x] Timeframe → multiplier/timespan mapping for all 8 timeframes (1m/5m/15m/30m/1h/4h/1D/1W)
+- [x] Adaptive lookback: 2d for 1m, 5d for 5m–30m, 30d for 1h–4h, 730d for 1D–1W
+- [x] Writes real candles to `marketData.upsertCandles` via `${ticker}_${timeframe}` key
+- [x] `status: 'idle' | 'loading' | 'success' | 'error'` returned for UI feedback
+- [x] `app/chart.tsx` updated — reads candles from store, no more synthetic data
+
+### D1 — Wave engine v2
+- [x] Incremental Bayesian posterior with decay weighting (half-life 5 candles)
+- [x] Multi-timeframe alignment scoring (+20 when 1H and 4H agree, flag `mtf_conflict`)
+- [x] Wave degree hierarchy: Grand Supercycle → Minuette color coding + `DEGREE_COLORS`
+- [x] ZigZag pivot with adaptive ATR threshold (Phase 1)
+- [x] Complete 8-rule engine including diagonal triangle detection (ending + leading)
+
+### D2 — 4-scenario panel with confidence intervals
+- [x] `components/scenarios/ScenarioPanel.tsx` — 4 cards with posterior probability bars, animated reorder
+- [x] `components/scenarios/ScenarioCard.tsx` — label, probability %, CI, stop price, R/R, MTF status
+- [x] Primary count at full opacity; secondary at 35%; tertiary/quaternary collapsed
+- [x] Animated reorder on probability update (Reanimated `LinearTransition.springify()`)
+
+### D3 — GEX overlay
+- [x] `services/polygonOptions.ts` — fetch options chain snapshot from Polygon (paginated, max 750 contracts)
+- [x] `utils/gexCalculator.ts` — compute dealer GEX per strike; find Zero GEX (linear interpolation), Call Wall, Put Wall
+- [x] `stores/gex.ts` — Zustand store for GEX levels keyed by ticker
+- [x] `hooks/useGEXLevels.ts` — fetches options chain on ticker change, writes to gex store
+- [x] `components/chart/GEXOverlayLayer.tsx` — amber/green/red dashed horizontal lines with right-axis labels; Y position recomputed on UI thread via useDerivedValue
+- [x] Wired into `CandlestickChart` via `gexLevels` prop; toggled by `overlays.gexLevels`
+- [x] Refresh: automatic on ticker change; `refresh()` fn available for pull-to-refresh
+
+### D4 — Options chain + IV surface
+- [x] `stores/options.ts` — chain data keyed by `${ticker}_${expiry}`; filter config, term structure, skew, IV history, Max Pain, Max Gamma
+- [x] `services/polygonOptions.ts` — extended with `fetchFullOptionsChain` (all Greeks, bid/ask, IV, expiry)
+- [x] `utils/optionsGreeks.ts` — Vanna, Charm (BS formulas), moneyness classifier, Max Pain, ATM IV, IV Rank, 25Δ RR + butterfly
+- [x] `hooks/useOptionsChain.ts` — fetch + enrich (Vanna/Charm/moneyness) + write term structure, skew, Max Pain, IV Rank to store
+- [x] `components/options/OptionsChain.tsx` — strike ladder with bid/ask, Δ, Γ, IV, OI; calls/puts/both toggle; expiry picker; moneyness color-coding; Max Gamma ★ and Max Pain ⚡ badges; IV Rank badge
+- [x] `components/options/IVSurface.tsx` — IV term structure (DTE vs ATM IV, contango=amber / backwardation=red) + IV skew (delta vs IV) charts; 25Δ RR + butterfly stats; built with Skia (no Victory Native XL dependency)
+- [x] `app/options.tsx` — OptionsScreen wired into Flow tab; Chain / IV Surface tab toggle
+- [x] IV Rank computed per ticker, displayed as badge (green <20, amber 20–80, red >80)
+
+### D5 — Options flow feed
+- [x] `services/flowFeed.ts` — polls Polygon options snapshot sorted by day.volume; filters premium ≥ threshold AND vol/OI ≥ 5%; sweep/block/side detection from VWAP vs bid/ask
+- [x] `stores/flow.ts` — ring buffer (300 prints), dedup by ID, repeat tagging (3+ same strike in 10-min window), `applyFlowFilter` selector
+- [x] `hooks/useFlowFeed.ts` — polls every 30s across 9 default liquid underlyings; status: idle/loading/live/error
+- [x] `components/flow/FlowFilterBar.tsx` — min premium ($10K–$1M+), type (All/Sweeps/Blocks/Unusual), sentiment (All/Bullish/Bearish) pill selectors
+- [x] `components/flow/FlowFeedList.tsx` — color-coded rows (call=green tint, put=red tint); SWEEP (orange) / BLOCK (purple) / REPEAT (red) badges; Δ, IV, V/OI meta row; pull-to-refresh
+- [x] `app/flow.tsx` — Flow/Chain/IV Surface tab switcher; live status dot + print count + last-update timestamp; hosts FlowFeedList + OptionsChain + IVSurface inline
+
+### D6 — Market regime classifier
+- [x] `packages/wave-engine/src/types.ts` — `MarketRegime` extended to 6 regimes (STRONG_TREND_UP/DOWN, WEAK_TREND_UP/DOWN, HIGH_VOL_CHOP, LOW_VOL_COMPRESSION)
+- [x] `utils/regimeClassifier.ts` — pure rules-based classifier (EMA 9/21/50/200 alignment, ATR expansion ratio, ATM IV as VIX proxy, bull/bear candle score); exports `classifyRegime` + `REGIME_META`
+- [x] `hooks/useRegimeClassifier.ts` — runs classifier on every candle update; reads ATM IV from options store; writes `MarketRegime` to `marketData.regimes[ticker]`
+- [x] `components/common/RegimeBadge.tsx` — colored bordered pill badge (sm/md sizes)
+- [x] Regime badge wired into `ScenarioCard` (Row 1) and `app/index.tsx` (HomeScreen regime section)
+- [x] `app/chart.tsx` — calls `useRegimeClassifier(ACTIVE_TICKER, timeframe, candles)`
+
+### D7 — Level 2 depth ladder
+- [x] `stores/l2.ts` — Zustand/Immer store: L2Book, TapePrint ring buffer (50), bidAskImbalance selector
+- [x] `hooks/useL2WebSocket.ts` — Polygon `wss://socket.polygon.io/stocks`; LV2/T/Q subscription; Lee-Ready aggressor; block detection (>5× 20-print rolling avg); auto-reconnect 3s
+- [x] `components/l2/DepthLadder.tsx` — top-10 bid/ask with proportional size bars, imbalance ratio header, spread separator; best-3 at full opacity, deeper at 50% alpha
+- [x] `components/l2/TimeAndSales.tsx` — FlatList tape (50 prints); green/red/white by aggressor; orange BLOCK badge
+- [x] Wired into `app/chart.tsx` — toggleable 160 px side panel (◀ Show L2 / ▶ Hide L2); DEPTH / TAPE tab switcher
+
+### D8 — CVD and tape reading
+- [x] `utils/cvdEngine.ts` — bar-level uptick-rule aggressor (close > prevClose = +vol, close < prevClose = -vol); detects bearish/bullish divergences over 5-bar windows
+- [x] `stores/indicators.ts` — `CVDSeries` (cumulative, deltas, divergences) added; `setCVD` action
+- [x] `hooks/useCVD.ts` — computes CVD on every candle close; writes to indicator store
+- [x] `components/indicators/CVDIndicator.tsx` — Skia CVD line (green rising / red falling), zero dash line, divergence dots, current value label (K/M suffix); worklet path builder on UI thread
+- [x] `components/chart/IndicatorPanel.tsx` — CVD added as page 3 (4-page pager: RSI / MACD / Volume / CVD)
+- [x] Block print detector (>5× 20-print rolling avg) already implemented in `useL2WebSocket` and flagged in TimeAndSales tape
+
+### D9 — Compound conditional alerts
+- [x] `stores/alerts.ts` updated — `AlertConditionType` extended with `scenario_flip`, `gex_regime_change`, `rsi_above`, `rsi_below`; `AlertOutputChannel` extended with `telegram`; `AlertDelivery` carries `telegramBotToken` + `telegramChatId`
+- [x] `services/alertDelivery.ts` — push notification (expo-notifications), webhook POST (JSON / template), Telegram Bot API `sendMessage`; `deliverAlert(alert, ctx)` fan-out
+- [x] `hooks/useAlertEngine.ts` — 5-second polling loop; evaluates all active alerts; AND-gates all conditions[]; marks triggered + calls `deliverAlert`
+- [x] `components/alerts/AlertBuilder.tsx` — 3-condition compound builder; all condition types; push/webhook/telegram channel toggles with token/URL inputs
+- [x] `useAlertEngine` wired into `AppNavigator` (runs for app lifetime)
+
+### D10 — Leveraged ETF decay engine
+- [x] `utils/etfDecayEngine.ts` — `LEVERAGED_ETF_REGISTRY` (20 ETFs: 2×/3× bull/bear + VIX futures); `computeDecay(spec, candles)` → annual drag % via (lev² × σ²) / 2 × 252; rollover drag for futures-based ETFs; `decaySeverity` (0–1 scale); `decayColor` (green/amber/red)
+- [x] `components/chart/DecayMeter.tsx` — warning banner showing leverage, annual drag %, gauge bar, FUTURES ROLL badge; renders only for known leveraged tickers
+- [x] `app/chart.tsx` — `<DecayMeter ticker candles />` inserted between L2 toggle and IndicatorPanel
+- [x] `app/watchlist.tsx` — `⚠ N× DECAY` badge on WatchlistCard left column for leveraged ETFs; color matches severity
+
+---
+
 ## Environment Variables
 
 Create `apps/mobile/.env` before running:
@@ -111,26 +201,12 @@ See **Phase 2 Readiness** section at the bottom of this file.
 
 ---
 
-## Phase 2 Readiness
-
-### Working with live data
-- Polygon WebSocket hook (`usePolygonWebSocket`) — needs `EXPO_PUBLIC_POLYGON_API_KEY` activated
-- Supabase auth — needs project created and env vars populated
-
-### Mocked / TODO
+## Phase 2 Remaining TODO
 | Feature | Status |
 |---|---|
 | SPY/QQQ/IWM prices on Home screen | Reads from `marketData` store — shows `—` until WS connected |
 | VIX / 10Y yield / DXY | `// TODO: REPLACE WITH LIVE DATA` placeholder |
 | Watchlist card prices | Shows `—` until Polygon WS delivers quotes |
 | Watchlist sparklines | Empty until `marketData.candles` populated |
-| Chart candles | Synthetic data in ChartScreen; real candles need REST backfill hook |
-| Wave engine on live data | `useWaveEngine` wired but candles are synthetic |
 | TickerDetail screen | Screen registered in ChartStack but not yet built |
-| Flow tab | Placeholder screen |
-
-### API keys to activate before Phase 2
-1. **Polygon.io** — real-time WebSocket (Starter plan minimum for delayed; Business for real-time)
-2. **Supabase** — create project, copy URL + anon key, enable Apple + Google OAuth providers
-3. **Apple Developer** — enable Sign In with Apple capability in provisioning profile
-4. **Google Cloud** — OAuth 2.0 client ID for iOS + Android, add to Supabase dashboard
+| Flow tab | Replaced by live feed in D5 |

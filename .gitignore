@@ -1,0 +1,20 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Expo
+.expo/
+dist/
+
+# Build output
+services/proxy/dist/
+packages/wave-engine/dist/
+
+# Editor / tools
+.claude/
+.DS_Store

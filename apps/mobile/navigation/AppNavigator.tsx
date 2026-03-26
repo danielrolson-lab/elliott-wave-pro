@@ -25,11 +25,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen }      from '../app/index';
 import { WatchlistScreen } from '../app/watchlist';
 import { ChartScreen }     from '../app/chart';
+import { FlowScreen }      from '../app/flow';
 import { AuthScreen }      from '../app/auth';
 import { SettingsScreen }  from '../app/settings';
 import { supabase }        from '../utils/supabase';
 import { useAuthStore }    from '../stores/auth';
 import { useTheme }        from '../theme/ThemeContext';
+import { useAlertEngine }  from '../hooks/useAlertEngine';
 
 // ── Param lists ───────────────────────────────────────────────────────────────
 
@@ -52,16 +54,7 @@ export type RootTabParamList = {
 
 // ── Placeholder screen ────────────────────────────────────────────────────────
 
-function FlowScreen() {
-  const theme = useTheme();
-  return (
-    <View style={[placeholderStyles.root, { backgroundColor: theme.background }]}>
-      <Text style={[placeholderStyles.label, { color: theme.textMuted }]}>
-        Flow — coming soon
-      </Text>
-    </View>
-  );
-}
+// FlowScreen will be implemented in D5 (options flow feed)
 
 // ── Loading screen ────────────────────────────────────────────────────────────
 
@@ -129,6 +122,9 @@ export function AppNavigator() {
   const session = useAuthStore((s) => s.session);
   const loading = useAuthStore((s) => s.loading);
   const { setSession, setLoading } = useAuthStore();
+
+  // Start alert evaluation engine for the lifetime of the app
+  useAlertEngine();
 
   // Bootstrap: resolve persisted session + subscribe to future changes
   useEffect(() => {

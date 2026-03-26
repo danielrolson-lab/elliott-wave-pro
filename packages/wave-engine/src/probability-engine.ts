@@ -1,32 +1,76 @@
 /**
- * probability-engine.ts
+ * probability-engine.ts  (v2 — Bayesian v2 with incremental decay + MTF)
  *
- * Scores each WaveCount across four likelihood components and returns the
+ * Scores each WaveCount across eight likelihood components and returns the
  * array sorted by posterior probability (descending).
  *
  * Bayesian update rule (per spec):
  *   posterior = normalize( prior × likelihood )
  *   likelihood = ∏ component_i^weight_i
  *
- * Components (weights sum to 1.0):
- *   fib_confluence    0.35  — current price near key Fibonacci level
- *   volume_profile    0.30  — Wave 3 has the highest average volume
- *   rsi_divergence    0.20  — RSI alignment with current wave position
- *   momentum_alignment 0.15 — MACD histogram sign matches wave direction
+ * Key upgrade from v1:
+ *   - Incremental posterior: existing posterior is used as the prior for the
+ *     next update, decayed toward the uniform distribution with a half-life
+ *     of 5 candles.  First-time scores start with a uniform prior.
+ *   - Multi-timeframe alignment: mtf_alignment component scores based on
+ *     whether higher-TF counts agree in direction.  Caller supplies scores
+ *     via opts.mtfScores.
+ *   - Two stub components (breadth_alignment, gex_alignment) held at neutral
+ *     until their data sources are integrated (D3 and D8).
  *
- * A small epsilon (0.01) prevents any component from zeroing the product.
+ * Component weights (sum = 1.0):
+ *   fib_confluence     0.25  — price near key Fibonacci level
+ *   volume_profile     0.20  — Wave 3 has the highest average volume
+ *   rsi_divergence     0.15  — RSI alignment with current wave position
+ *   momentum_alignment 0.10  — MACD histogram sign matches wave direction
+ *   mtf_alignment      0.15  — same wave direction on higher timeframe(s)
+ *   time_symmetry      0.10  — Wave 4 duration ≈ Wave 2 duration
+ *   breadth_alignment  0.025 — NYSE TICK / A-D line (stub: neutral 0.5)
+ *   gex_alignment      0.025 — GEX regime matches wave direction (stub)
  */
 
 import type { WaveCount, OHLCV } from './types';
 import { computeFibLevels } from './fibonacci';
 
-// ── Component weights ─────────────────────────────────────────────────────────
+// ── Component weights (must sum to 1.0) ───────────────────────────────────────
 
-const W_FIB  = 0.35;
-const W_VOL  = 0.30;
-const W_RSI  = 0.20;
-const W_MACD = 0.15;
-const EPS    = 0.01; // prevents zero-product likelihood
+const WEIGHTS = {
+  fib_confluence:     0.25,
+  volume_profile:     0.20,
+  rsi_divergence:     0.15,
+  momentum_alignment: 0.10,
+  mtf_alignment:      0.15,
+  time_symmetry:      0.10,
+  breadth_alignment:  0.025,
+  gex_alignment:      0.025,
+} as const satisfies Record<string, number>;
+
+const HALF_LIFE_CANDLES = 5;
+const EPS = 0.01; // prevents zero-product likelihood
+
+// ── Incremental decay ─────────────────────────────────────────────────────────
+
+/**
+ * Blends an existing posterior toward the uniform (maximum-entropy) prior.
+ *
+ * After `halfLife` candle closes, the weight on the existing posterior halves.
+ * After many candles without confirming new evidence, all counts converge
+ * toward equal probability.
+ *
+ * @param existing       Previous posterior probability for this count
+ * @param uniform        1/n (equal-weight prior among all competing counts)
+ * @param candlesSince   Number of candle closes since `existing` was computed
+ * @param halfLife       Decay half-life in candles (default 5)
+ */
+export function applyDecay(
+  existing: number,
+  uniform: number,
+  candlesSince: number,
+  halfLife = HALF_LIFE_CANDLES,
+): number {
+  const decayFactor = Math.pow(0.5, candlesSince / halfLife);
+  return existing * decayFactor + uniform * (1 - decayFactor);
+}
 
 // ── Score: Fibonacci confluence ───────────────────────────────────────────────
 
@@ -84,12 +128,11 @@ function scoreVolumeProfile(count: WaveCount, candles: OHLCV[]): number {
  * RSI should show bearish divergence near Wave 5 tops (lower RSI while price
  * makes higher high) and bullish divergence at Wave 2/4 bottoms.
  *
- * Simplified signal:
- *   - Wave 5 complete (bullish): RSI < 70 = likely divergence → 0.8
- *                                RSI ≥ 70 = no divergence     → 0.3
- *   - Wave 5 complete (bearish): RSI > 30 = likely divergence → 0.8
- *                                RSI ≤ 30 = no divergence     → 0.3
- *   - Other waves: neutral 0.5
+ * - Wave 5 complete (bullish): RSI < 70 = likely divergence → 0.8
+ *                              RSI ≥ 70 = no divergence     → 0.3
+ * - Wave 5 complete (bearish): RSI > 30 = likely divergence → 0.8
+ *                              RSI ≤ 30 = no divergence     → 0.3
+ * - Other waves: neutral 0.5
  */
 function scoreRsiDivergence(count: WaveCount, rsi: number): number {
   const currentLabel = count.currentWave.label;
@@ -115,17 +158,65 @@ function scoreRsiDivergence(count: WaveCount, rsi: number): number {
 function scoreMacdAlignment(count: WaveCount, macdHistogram: number): number {
   const label = count.currentWave.label;
 
-  // Determine expected direction for the current wave
   const isBullishWave =
     label === '1' || label === '3' || label === '5'
       ? count.currentWave.startPivot.price < (count.currentWave.endPivot?.price ?? Infinity)
       : count.currentWave.startPivot.price > (count.currentWave.endPivot?.price ?? 0);
 
-  const deadband = 0.01; // treat near-zero MACD as neutral
+  const deadband = 0.01;
   if (Math.abs(macdHistogram) < deadband) return 0.5;
 
   const macdBullish = macdHistogram > 0;
   return macdBullish === isBullishWave ? 0.9 : 0.2;
+}
+
+// ── Score: Time symmetry ──────────────────────────────────────────────────────
+
+/**
+ * Per Frost/Prechter: Wave 4 often takes approximately the same time as Wave 2.
+ * Measures the ratio of Wave 2 and Wave 4 durations in bars (via pivot indices).
+ *
+ * Returns 0.8 when durations are within a factor of 2; 0.4 otherwise.
+ */
+export function scoreTimeSym(count: WaveCount, _candles: OHLCV[]): number {
+  const w2 = count.allWaves.find((w) => w.label === '2');
+  const w4 = count.allWaves.find((w) => w.label === '4');
+
+  if (!w2 || !w4 || !w2.endPivot || !w4.endPivot) return 0.5;
+
+  const w2Bars = w2.endPivot.index - w2.startPivot.index;
+  const w4Bars = w4.endPivot.index - w4.startPivot.index;
+
+  if (w2Bars <= 0 || w4Bars <= 0) return 0.5;
+
+  const ratio = Math.min(w2Bars, w4Bars) / Math.max(w2Bars, w4Bars);
+  // 1.0 = perfect symmetry; score falls at ratio < 0.5 (factor-of-2 divergence)
+  return ratio >= 0.5 ? 0.8 : 0.4;
+}
+
+// ── Score: MTF alignment ──────────────────────────────────────────────────────
+
+/**
+ * Accepts an external MTF score in [0, 1] supplied by the hook.
+ * 0.9 = higher TF agrees in direction
+ * 0.5 = no higher TF data (neutral)
+ * 0.2 = higher TF conflicts in direction
+ * If undefined, returns neutral 0.5.
+ */
+function scoreMtfAlignment(mtfScore: number | undefined): number {
+  return mtfScore ?? 0.5;
+}
+
+// ── Score: Stub components ────────────────────────────────────────────────────
+
+/** Breadth alignment (NYSE TICK / A-D line) — neutral stub until D8. */
+function scoreBreadthAlignment(): number {
+  return 0.5;
+}
+
+/** GEX alignment — neutral stub until D3 (GEX overlay). */
+function scoreGexAlignment(): number {
+  return 0.5;
 }
 
 // ── Normalization ─────────────────────────────────────────────────────────────
@@ -141,71 +232,118 @@ function normalizeProbs(values: number[]): number[] {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+export interface ScoreOptions {
+  /**
+   * Posterior probabilities from the previous scoring round, keyed by countId.
+   * Used as the decayed prior for the incremental Bayesian update.
+   * Counts not present here get a uniform prior (1/n).
+   */
+  existingPosteriors?: Readonly<Record<string, number>>;
+  /**
+   * How many candle closes have elapsed since the existing posteriors were
+   * computed.  Drives the decay toward uniform prior.  Default: 1.
+   */
+  candlesSinceUpdate?: number;
+  /**
+   * MTF alignment score per countId, in [0, 1].
+   * 0.9 = higher TF agrees, 0.5 = unknown/neutral, 0.2 = conflict.
+   * Counts not present here receive the neutral score.
+   */
+  mtfScores?: Readonly<Record<string, number>>;
+}
+
 /**
- * Score and rank WaveCount objects by Bayesian posterior probability.
+ * Score and rank WaveCount objects by incremental Bayesian posterior.
  *
- * @param counts  Wave counts from generateWaveCounts
- * @param candles OHLCV array (same series used to detect pivots)
- * @param rsi     Current RSI(14) value (0–100)
- * @param macd    Current MACD histogram value (positive = bullish momentum)
- * @returns       The same counts with updated posteriors, sorted descending
+ * @param counts   Wave counts from generateWaveCounts
+ * @param candles  OHLCV array (same series used to detect pivots)
+ * @param rsi      Current RSI(14) value (0–100)
+ * @param macd     Current MACD histogram value (positive = bullish momentum)
+ * @param opts     Optional: existing posteriors, elapsed candles, MTF scores
+ * @returns        The same counts with updated posteriors, sorted descending
  */
 export function scoreWaveCounts(
   counts: WaveCount[],
   candles: OHLCV[],
   rsi: number,
   macd: number,
+  opts: ScoreOptions = {},
 ): WaveCount[] {
   if (counts.length === 0) return [];
 
   const n = counts.length;
-  const equalPrior = 1 / n;
+  const uniformPrior = 1 / n;
+  const candlesSince = opts.candlesSinceUpdate ?? 1;
 
-  // Compute unnormalized posteriors
-  const unnormalized = counts.map((count) => {
-    const fibScore  = scoreFibConfluence(count, candles)   + EPS;
-    const volScore  = scoreVolumeProfile(count, candles)   + EPS;
-    const rsiScore  = scoreRsiDivergence(count, rsi)       + EPS;
-    const macdScore = scoreMacdAlignment(count, macd)      + EPS;
-
-    // Geometric mean weighted by component weights
-    const likelihood =
-      fibScore  ** W_FIB  *
-      volScore  ** W_VOL  *
-      rsiScore  ** W_RSI  *
-      macdScore ** W_MACD;
-
-    return equalPrior * likelihood;
+  // ── Compute priors (decayed from existing or uniform) ────────────────────────
+  const priors = counts.map((count): number => {
+    const existing = opts.existingPosteriors?.[count.id];
+    if (existing === undefined) return uniformPrior;
+    return applyDecay(existing, uniformPrior, candlesSince);
   });
 
+  // ── Compute raw component scores (stored without EPS) ────────────────────────
+  const rawScores = counts.map((count) => ({
+    fib_confluence:     scoreFibConfluence(count, candles),
+    volume_profile:     scoreVolumeProfile(count, candles),
+    rsi_divergence:     scoreRsiDivergence(count, rsi),
+    momentum_alignment: scoreMacdAlignment(count, macd),
+    mtf_alignment:      scoreMtfAlignment(opts.mtfScores?.[count.id]),
+    time_symmetry:      scoreTimeSym(count, candles),
+    breadth_alignment:  scoreBreadthAlignment(),
+    gex_alignment:      scoreGexAlignment(),
+  }));
+
+  // ── Compute likelihoods (geometric mean weighted, with EPS floor) ─────────────
+  const likelihoods = rawScores.map((c) => (
+    (c.fib_confluence     + EPS) ** WEIGHTS.fib_confluence     *
+    (c.volume_profile     + EPS) ** WEIGHTS.volume_profile     *
+    (c.rsi_divergence     + EPS) ** WEIGHTS.rsi_divergence     *
+    (c.momentum_alignment + EPS) ** WEIGHTS.momentum_alignment *
+    (c.mtf_alignment      + EPS) ** WEIGHTS.mtf_alignment      *
+    (c.time_symmetry      + EPS) ** WEIGHTS.time_symmetry      *
+    (c.breadth_alignment  + EPS) ** WEIGHTS.breadth_alignment  *
+    (c.gex_alignment      + EPS) ** WEIGHTS.gex_alignment
+  ));
+
+  // ── Bayesian update: posterior ∝ prior × likelihood ───────────────────────────
+  const unnormalized = priors.map((prior, i) => prior * likelihoods[i]);
   const normalized = normalizeProbs(unnormalized);
 
-  // Stamp results back onto WaveCount posteriors
-  const scored = counts.map((count, i) => {
-    const fib  = scoreFibConfluence(count, candles);
-    const vol  = scoreVolumeProfile(count, candles);
-    const rsiS = scoreRsiDivergence(count, rsi);
-    const macdS = scoreMacdAlignment(count, macd);
+  const now = Date.now();
+  const MTF_CONFLICT_THRESHOLD = 0.4;
+
+  // ── Build updated WaveCounts ──────────────────────────────────────────────────
+  const scored = counts.map((count, i): WaveCount => {
+    const c = rawScores[i];
+    const mtfScore = opts.mtfScores?.[count.id] ?? 0.5;
+    const hasExisting = opts.existingPosteriors?.[count.id] !== undefined;
 
     return {
       ...count,
       posterior: {
         ...count.posterior,
-        prior: equalPrior,
+        prior: priors[i],
         posterior: normalized[i],
         likelihood_components: {
-          ...count.posterior.likelihood_components,
-          fib_confluence: fib,
-          volume_profile: vol,
-          rsi_divergence: rsiS,
-          momentum_alignment: macdS,
+          fib_confluence:     c.fib_confluence,
+          volume_profile:     c.volume_profile,
+          rsi_divergence:     c.rsi_divergence,
+          momentum_alignment: c.momentum_alignment,
+          mtf_alignment:      c.mtf_alignment,
+          time_symmetry:      c.time_symmetry,
+          breadth_alignment:  c.breadth_alignment,
+          gex_alignment:      c.gex_alignment,
         },
-        last_updated: Date.now(),
+        decay_factor: hasExisting
+          ? Math.pow(0.5, candlesSince / HALF_LIFE_CANDLES)
+          : 1.0,
+        last_updated: now,
+        mtf_conflict: mtfScore < MTF_CONFLICT_THRESHOLD,
       },
     } satisfies WaveCount;
   });
 
-  // Sort descending by posterior probability
   return scored.sort((a, b) => b.posterior.posterior - a.posterior.posterior);
 }
 

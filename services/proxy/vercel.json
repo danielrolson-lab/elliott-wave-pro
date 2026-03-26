@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "ws-proxy.ts",
+      "use": "@vercel/node",
+      "config": {
+        "maxDuration": 300
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/ws",
+      "dest": "/ws-proxy.ts"
+    },
+    {
+      "src": "/health",
+      "dest": "/ws-proxy.ts"
+    }
+  ],
+  "env": {
+    "POLYGON_API_KEY": "@polygon-api-key"
+  }
+}

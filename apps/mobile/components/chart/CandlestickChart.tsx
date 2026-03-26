@@ -44,6 +44,8 @@ import type { OverlayConfig } from '../../stores/ui';
 import { CHART_COLORS, CHART_LAYOUT } from './chartTypes';
 import { WaveOverlayLayer }       from './WaveOverlayLayer';
 import { FibonacciOverlayLayer }  from './FibonacciOverlayLayer';
+import { GEXOverlayLayer }        from './GEXOverlayLayer';
+import type { GEXLevels }         from '../../utils/gexCalculator';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +57,8 @@ export interface CandlestickChartProps {
   waveCounts?:  readonly WaveCount[];
   /** How many candles precede the slice passed to the wave engine. */
   waveSliceOffset?: number;
+  /** GEX levels to overlay (Zero GEX, Call Wall, Put Wall). */
+  gexLevels?:          GEXLevels | null;
   /** Shared values lifted to App level so IndicatorPanel can sync. */
   externalTranslateX?: SharedValue<number>;
   externalCandleW?:    SharedValue<number>;
@@ -219,6 +223,7 @@ export function CandlestickChart({
   ticker = '',
   waveCounts = [],
   waveSliceOffset = 0,
+  gexLevels = null,
   externalTranslateX,
   externalCandleW,
 }: CandlestickChartProps) {
@@ -624,6 +629,18 @@ export function CandlestickChart({
           {overlays.fibRetracements && waveCounts.length > 0 && (
             <FibonacciOverlayLayer
               waveCounts={waveCounts}
+              layoutDV={layoutDV}
+              chartTop={CHART_TOP}
+              chartDrawH={CHART_DRAW_H}
+              chartAreaW={CHART_AREA_W}
+              font={font}
+            />
+          )}
+
+          {/* ── GEX overlay layer ── */}
+          {overlays.gexLevels && (
+            <GEXOverlayLayer
+              levels={gexLevels}
               layoutDV={layoutDV}
               chartTop={CHART_TOP}
               chartDrawH={CHART_DRAW_H}

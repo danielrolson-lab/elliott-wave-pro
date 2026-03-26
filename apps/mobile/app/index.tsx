@@ -13,6 +13,9 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMarketDataStore } from '../stores/marketData';
 import { CHART_COLORS } from '../components/chart/chartTypes';
+import { RegimeBadge } from '../components/common/RegimeBadge';
+import { REGIME_META } from '../utils/regimeClassifier';
+import type { MarketRegime } from '@elliott-wave-pro/wave-engine';
 
 // ── Market hours (NYSE — ET, UTC-4 or UTC-5) ─────────────────────────────────
 
@@ -107,7 +110,8 @@ const MACRO_ITEMS = [
 
 export function HomeScreen() {
   const [statusInfo, setStatusInfo] = useState<StatusInfo>(() => computeStatus(new Date()));
-  const quotes = useMarketDataStore((s) => s.quotes);
+  const quotes  = useMarketDataStore((s) => s.quotes);
+  const regimes = useMarketDataStore((s) => s.regimes);
 
   // Tick every second for the countdown
   useEffect(() => {
@@ -153,6 +157,29 @@ export function HomeScreen() {
             );
           })}
         </View>
+
+        {/* ── Regime strip ── */}
+        {Object.keys(regimes).length > 0 && (
+          <>
+            <Text style={styles.sectionHeader}>REGIME</Text>
+            <View style={styles.regimeRow}>
+              {INDEX_TICKERS.map((ticker) => {
+                const regime = regimes[ticker] as MarketRegime | undefined;
+                if (!regime) return null;
+                const meta = REGIME_META[regime];
+                return (
+                  <View key={ticker} style={[styles.regimeCard, { borderColor: meta.color }]}>
+                    <Text style={styles.stripTicker}>{ticker}</Text>
+                    <RegimeBadge ticker={ticker} size="md" />
+                    <Text style={[styles.regimeDesc, { color: meta.color }]} numberOfLines={2}>
+                      {meta.label}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        )}
 
         {/* ── Macro strip ── */}
         <Text style={styles.sectionHeader}>MACRO</Text>
@@ -253,5 +280,23 @@ const styles = StyleSheet.create({
   stripChange: {
     fontSize:   12,
     fontWeight: '500',
+  },
+  regimeRow: {
+    flexDirection: 'row',
+    gap:           10,
+    marginBottom:  20,
+  },
+  regimeCard: {
+    flex:            1,
+    backgroundColor: '#161B22',
+    borderRadius:    8,
+    padding:         10,
+    borderWidth:     1,
+    gap:             4,
+  },
+  regimeDesc: {
+    fontSize:   9,
+    fontWeight: '500',
+    marginTop:  2,
   },
 });

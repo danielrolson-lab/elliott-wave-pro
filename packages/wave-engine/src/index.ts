@@ -21,11 +21,21 @@ export type {
   Instrument,
 } from './types';
 
+export { DEGREE_COLORS } from './types';
+
 // ── Pivot detection ───────────────────────────────────────────────────────────
 export { detectPivots, computeATR } from './pivot-detection';
 
 // ── Wave rules ────────────────────────────────────────────────────────────────
-export { generateWaveCounts } from './wave-rules';
+export {
+  generateWaveCounts,
+  checkRules,
+  checkSoftRules,
+  measureWaves,
+  tryBuildDiagonal,
+  isHighPivot,
+  degreeForTimeframe,
+} from './wave-rules';
 
 // ── Fibonacci ─────────────────────────────────────────────────────────────────
 export {
@@ -36,4 +46,14 @@ export {
 } from './fibonacci';
 
 // ── Probability engine ────────────────────────────────────────────────────────
-export { scoreWaveCounts } from './probability-engine';
+export {
+  scoreWaveCounts,
+  applyDecay,
+  scoreTimeSym,
+  scoreFibConfluence,
+  scoreVolumeProfile,
+  scoreRsiDivergence,
+  scoreMacdAlignment,
+} from './probability-engine';
+
+export type { ScoreOptions } from './probability-engine';

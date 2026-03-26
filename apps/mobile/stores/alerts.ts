@@ -7,14 +7,18 @@ export type AlertConditionType =
   | 'price_below'
   | 'wave_scenario_probability'
   | 'wave_label_reached'
+  | 'scenario_flip'          // primary wave count changes label
   | 'iv_rank_above'
   | 'iv_rank_below'
   | 'volume_spike'
-  | 'regime_change';
+  | 'regime_change'
+  | 'gex_regime_change'      // GEX Zero line crossed
+  | 'rsi_above'
+  | 'rsi_below';
 
 export type AlertStatus = 'active' | 'triggered' | 'dismissed' | 'expired';
 
-export type AlertOutputChannel = 'push' | 'webhook' | 'in_app';
+export type AlertOutputChannel = 'push' | 'webhook' | 'telegram' | 'in_app';
 
 export interface AlertCondition {
   type: AlertConditionType;
@@ -30,9 +34,13 @@ export interface AlertCondition {
 }
 
 export interface AlertDelivery {
-  channels: AlertOutputChannel[];
-  webhookUrl?: string;
+  channels:               AlertOutputChannel[];
+  webhookUrl?:            string;
   webhookPayloadTemplate?: string;
+  /** Telegram bot token (e.g. "123456:ABC-DEF…") */
+  telegramBotToken?:      string;
+  /** Telegram chat ID to send to */
+  telegramChatId?:        string;
 }
 
 export interface Alert {
