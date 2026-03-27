@@ -19,5 +19,8 @@
     "tsx": "^4.16.0",
     "typescript": "^5.4.5",
     "ws": "^8.17.1"
+  },
+  "dependencies": {
+    "hermes-parser": "0.25.1"
   }
 }
