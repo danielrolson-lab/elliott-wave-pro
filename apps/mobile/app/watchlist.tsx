@@ -81,7 +81,14 @@ async function searchTickers(query: string): Promise<PolygonTickerResult[]> {
     const res = await fetch(url);
     if (!res.ok) return [];
     const json = await res.json() as { results?: PolygonTickerResult[] };
-    return json.results ?? [];
+    const results = json.results ?? [];
+    // BUG-003: exact ticker match first, then prefix, then rest
+    const upper = query.toUpperCase();
+    return results.sort((a, b) => {
+      const aExact   = a.ticker === upper ? 0 : a.ticker.startsWith(upper) ? 1 : 2;
+      const bExact   = b.ticker === upper ? 0 : b.ticker.startsWith(upper) ? 1 : 2;
+      return aExact - bExact;
+    });
   } catch {
     return [];
   }
@@ -469,7 +476,7 @@ function AutocompleteDropdown({ results, onSelect }: AutocompleteDropdownProps) 
 const dropdownStyles = StyleSheet.create({
   container: {
     position:        'absolute',
-    top:             60,   // below search bar
+    top:             46,   // below search bar input within searchContainer
     left:            12,
     right:           12,
     backgroundColor: '#1C2128',
@@ -547,6 +554,8 @@ export function WatchlistScreen() {
   }, []);
 
   const handleSelectSuggestion = useCallback((result: PolygonTickerResult) => {
+    // BUG-002: cancel pending debounce so it doesn't re-populate suggestions after clearing
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     const instrument: Instrument = {
       ticker:   result.ticker,
       name:     result.name,
@@ -606,11 +615,11 @@ export function WatchlistScreen() {
           <Text style={styles.headerCount}>{items.length} tickers</Text>
         </View>
 
-        {/* Search bar */}
-        <SearchBar value={query} onChange={handleQueryChange} />
-
-        {/* Autocomplete dropdown (absolute, overlays list) */}
-        <AutocompleteDropdown results={suggestions} onSelect={handleSelectSuggestion} />
+        {/* Search bar + dropdown (BUG-001: wrapper so dropdown is positioned below the search bar) */}
+        <View style={styles.searchContainer}>
+          <SearchBar value={query} onChange={handleQueryChange} />
+          <AutocompleteDropdown results={suggestions} onSelect={handleSelectSuggestion} />
+        </View>
 
         {/* Watchlist items */}
         {items.length === 0 ? (
@@ -660,6 +669,9 @@ const styles = StyleSheet.create({
   headerCount: {
     color:    CHART_COLORS.textMuted,
     fontSize: 12,
+  },
+  searchContainer: {
+    zIndex: 100,
   },
   list: {
     paddingBottom: 32,
