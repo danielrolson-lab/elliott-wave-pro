@@ -68,8 +68,7 @@
       ],
       [
         "expo-local-authentication"
-      ],
-      "expo-asset"
+      ]
     ],
     "extra": {
       "eas": {
