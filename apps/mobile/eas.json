@@ -31,7 +31,8 @@
       "distribution": "store",
       "node": "18.18.0",
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "m-medium",
+        "ascAppId": "6761231249"
       },
       "android": {
         "buildType": "app-bundle"
