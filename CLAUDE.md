@@ -423,7 +423,7 @@ See **Phase 2 Readiness** section at the bottom of this file.
 - [x] EAS project created: `@danzimal/elliott-wave-pro` (ID: dc50700b-8e77-4e1e-b6f9-9253ffdd8201)
 - [x] `app.json` updated with real EAS projectId from `eas init --force`
 - [x] Apple Team ID `2YSL5AXL3P` set in `eas.json`
-- [ ] iOS production build — requires one-time interactive credential setup: `! eas build --platform ios --profile production`
+- [x] iOS production build queued — build ID dc50700b / https://expo.dev/accounts/danzimal/projects/elliott-wave-pro/builds/65bc69d3-d0fb-4d3a-b888-4315d679b59b
 
 ### D10 — Launch checklist and handoff document
 - [x] `docs/LAUNCH_CHECKLIST.md` — infrastructure, credentials, assets, testing, legal, submission sections

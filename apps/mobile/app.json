@@ -4,9 +4,6 @@
     "slug": "elliott-wave-pro",
     "owner": "danzimal",
     "version": "1.0.0",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -21,7 +18,7 @@
       "bundleIdentifier": "com.elliottwave.pro",
       "usesAppleSignIn": true,
       "deploymentTarget": "16.0",
-      "buildNumber": "1",
+      "buildNumber": "4",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Elliott Wave Pro uses the microphone for voice navigation commands.",
         "NSCameraUsageDescription": "Elliott Wave Pro may use the camera for profile photos.",
