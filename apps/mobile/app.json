@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.elliottwave.pro",
-      "buildNumber": "6",
+      "buildNumber": "7",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Elliott Wave Pro uses the microphone for voice navigation commands.",
         "NSCameraUsageDescription": "Elliott Wave Pro may use the camera for profile photos.",
@@ -68,7 +68,8 @@
       ],
       [
         "expo-local-authentication"
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "eas": {
