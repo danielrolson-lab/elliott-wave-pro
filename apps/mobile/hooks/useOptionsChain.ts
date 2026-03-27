@@ -61,12 +61,6 @@ export function useOptionsChain(ticker: string): UseOptionsChainResult {
   const [error,  setError]  = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Read spot from the 5m candle store (last close)
-  const spot = useMarketDataStore((s) => {
-    const candles = s.candles[`${ticker}_5m`];
-    return candles && candles.length > 0 ? candles[candles.length - 1].close : 0;
-  });
-
   const run = useCallback(async () => {
     if (!POLYGON_API_KEY) {
       setStatus('error');
@@ -80,6 +74,10 @@ export function useOptionsChain(ticker: string): UseOptionsChainResult {
 
     setStatus('loading');
     setError(null);
+
+    // BUG-013/014: read spot imperatively to avoid recreating `run` on every candle close
+    const candles5m = useMarketDataStore.getState().candles[`${ticker}_5m`];
+    const spot = candles5m && candles5m.length > 0 ? candles5m[candles5m.length - 1].close : 0;
 
     try {
       const raw = await fetchFullOptionsChain(ticker, POLYGON_API_KEY, ctrl.signal);
@@ -187,7 +185,7 @@ export function useOptionsChain(ticker: string): UseOptionsChainResult {
       setStatus('error');
     }
   }, [
-    ticker, spot,
+    ticker,
     setRows, setExpiries, setSelectedExpiry, setTermStructure,
     setSkew, setMaxPain, setMaxGammaStrike, setIVRank, appendIVHistory, store,
   ]);
