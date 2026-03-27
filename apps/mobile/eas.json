@@ -29,11 +29,16 @@
     "production": {
       "autoIncrement": true,
       "distribution": "store",
+      "node": "18.18.0",
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "large"
       },
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EAS_BUILD_NO_EXPO_GO_WARNING": "true",
+        "EAS_SKIP_AUTO_FINGERPRINT": "1"
       }
     }
   },
