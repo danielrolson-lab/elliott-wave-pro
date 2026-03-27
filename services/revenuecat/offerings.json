@@ -1,0 +1,160 @@
+{
+  "_comment": "RevenueCat Offering Configuration for Elliott Wave Pro",
+  "_instructions": [
+    "1. Log in to app.revenuecat.com",
+    "2. Select the Elliott Wave Pro project",
+    "3. Go to Entitlements and create the two entitlements below",
+    "4. Go to Products and create all four products below, linking to App Store / Play Store product IDs",
+    "5. Go to Offerings and create the 'default' offering with the two packages below",
+    "6. Attach the correct products to each package for iOS and Android"
+  ],
+
+  "app": {
+    "name": "Elliott Wave Pro",
+    "bundle_id_ios": "com.elliottwave.pro",
+    "package_name_android": "com.elliottwave.pro",
+    "expo_public_key": "EXPO_PUBLIC_REVENUECAT_KEY",
+    "note": "Key is already set in apps/mobile/.env as EXPO_PUBLIC_REVENUECAT_KEY"
+  },
+
+  "entitlements": [
+    {
+      "identifier": "pro",
+      "display_name": "Pro",
+      "description": "Unlocks unlimited watchlist, all 4 wave scenarios, Wave Scanner, Trade Journal, Market Internals, Dark Pool, Wave Grid, Earnings Tool, Correlation Matrix",
+      "products": [
+        "com.elliottwave.pro.pro_monthly",
+        "com.elliottwave.pro.pro_annual",
+        "com.elliottwave.pro.elite_monthly",
+        "com.elliottwave.pro.elite_annual"
+      ]
+    },
+    {
+      "identifier": "elite",
+      "display_name": "Elite",
+      "description": "Unlocks Setup Replay Mode and Quant API access (superset of Pro)",
+      "products": [
+        "com.elliottwave.pro.elite_monthly",
+        "com.elliottwave.pro.elite_annual"
+      ]
+    }
+  ],
+
+  "products": [
+    {
+      "identifier": "com.elliottwave.pro.pro_monthly",
+      "platform_ios": "com.elliottwave.pro.pro_monthly",
+      "platform_android": "com.elliottwave.pro.pro_monthly",
+      "type": "auto_renewable_subscription",
+      "display_name": "Elliott Wave Pro — Pro Monthly",
+      "price_usd": 24.99,
+      "billing_period": "P1M",
+      "entitlements": ["pro"]
+    },
+    {
+      "identifier": "com.elliottwave.pro.pro_annual",
+      "platform_ios": "com.elliottwave.pro.pro_annual",
+      "platform_android": "com.elliottwave.pro.pro_annual",
+      "type": "auto_renewable_subscription",
+      "display_name": "Elliott Wave Pro — Pro Annual",
+      "price_usd": 199.00,
+      "billing_period": "P1Y",
+      "discount_vs_monthly_pct": 34,
+      "entitlements": ["pro"]
+    },
+    {
+      "identifier": "com.elliottwave.pro.elite_monthly",
+      "platform_ios": "com.elliottwave.pro.elite_monthly",
+      "platform_android": "com.elliottwave.pro.elite_monthly",
+      "type": "auto_renewable_subscription",
+      "display_name": "Elliott Wave Pro — Elite Monthly",
+      "price_usd": 59.99,
+      "billing_period": "P1M",
+      "entitlements": ["pro", "elite"]
+    },
+    {
+      "identifier": "com.elliottwave.pro.elite_annual",
+      "platform_ios": "com.elliottwave.pro.elite_annual",
+      "platform_android": "com.elliottwave.pro.elite_annual",
+      "type": "auto_renewable_subscription",
+      "display_name": "Elliott Wave Pro — Elite Annual",
+      "price_usd": 499.00,
+      "billing_period": "P1Y",
+      "discount_vs_monthly_pct": 31,
+      "entitlements": ["pro", "elite"]
+    }
+  ],
+
+  "offerings": [
+    {
+      "identifier": "default",
+      "display_name": "Default Offering",
+      "description": "Shown on PaywallScreen; fetched via Purchases.getOfferings()",
+      "packages": [
+        {
+          "identifier": "$rc_monthly",
+          "display_name": "Pro Monthly",
+          "product": "com.elliottwave.pro.pro_monthly",
+          "platform_override_ios": "com.elliottwave.pro.pro_monthly",
+          "platform_override_android": "com.elliottwave.pro.pro_monthly"
+        },
+        {
+          "identifier": "$rc_annual",
+          "display_name": "Pro Annual",
+          "product": "com.elliottwave.pro.pro_annual",
+          "platform_override_ios": "com.elliottwave.pro.pro_annual",
+          "platform_override_android": "com.elliottwave.pro.pro_annual"
+        },
+        {
+          "identifier": "elite_monthly",
+          "display_name": "Elite Monthly",
+          "product": "com.elliottwave.pro.elite_monthly",
+          "platform_override_ios": "com.elliottwave.pro.elite_monthly",
+          "platform_override_android": "com.elliottwave.pro.elite_monthly"
+        },
+        {
+          "identifier": "elite_annual",
+          "display_name": "Elite Annual",
+          "product": "com.elliottwave.pro.elite_annual",
+          "platform_override_ios": "com.elliottwave.pro.elite_annual",
+          "platform_override_android": "com.elliottwave.pro.elite_annual"
+        }
+      ]
+    }
+  ],
+
+  "app_store_setup": {
+    "platform": "ios",
+    "steps": [
+      "1. Open App Store Connect → My Apps → Elliott Wave Pro → In-App Purchases & Subscriptions",
+      "2. Create Subscription Group named 'Elliott Wave Pro Subscriptions'",
+      "3. Create each product with the identifier and price from the products array above",
+      "4. Set subscription group display name and localization for each product",
+      "5. Submit each product for review alongside the app (or separately if app is already approved)"
+    ]
+  },
+
+  "google_play_setup": {
+    "platform": "android",
+    "steps": [
+      "1. Open Google Play Console → Elliott Wave Pro → Monetize → Subscriptions",
+      "2. Create each subscription using the identifier from the products array above",
+      "3. Set base plan with the billing period and price",
+      "4. Activate each subscription before the build is submitted",
+      "5. Link RevenueCat to Play Console via Service Account (see LAUNCH_CHECKLIST.md)"
+    ]
+  },
+
+  "mobile_integration": {
+    "hook": "apps/mobile/hooks/useRevenueCat.ts",
+    "store": "apps/mobile/stores/subscription.ts",
+    "paywall": "apps/mobile/components/paywall/PaywallScreen.tsx",
+    "product_ids_in_code": [
+      "com.elliottwave.pro.pro_monthly",
+      "com.elliottwave.pro.pro_annual",
+      "com.elliottwave.pro.elite_monthly",
+      "com.elliottwave.pro.elite_annual"
+    ],
+    "note": "Product identifiers in PaywallScreen.tsx match this file exactly. No code changes needed."
+  }
+}

@@ -390,6 +390,17 @@ See **Phase 2 Readiness** section at the bottom of this file.
 - [x] RLS enabled on all tables; users can only read/write own rows
 - [x] Indexes on ticker and user_id columns
 
+### D3 — Vercel proxy verification and URL consolidation
+- [x] `services/proxy/vercel.json` — explicit builds + routes for all edge functions (ai-commentary, alert-intelligence, wave-compute, quant-api)
+- [x] `apps/mobile/hooks/useScenarioCommentary.ts` — uses `EXPO_PUBLIC_API_BASE_URL` (was wrong fallback URL)
+- [x] `apps/mobile/services/alertIntelligenceService.ts` — uses `EXPO_PUBLIC_API_BASE_URL`
+- [x] `/health` and `/api/ws` verified live on deployed proxy
+- [x] Fly.io wave-scan endpoint verified live (returns 401 from Polygon — FastAPI is up)
+
+### D4 — Wave compute proxy route
+- [x] `services/proxy/wave-compute.ts` — Vercel Edge Function; proxies `/api/wave-compute` → `https://elliott-wave-scanner.fly.dev/wave-scan`
+- [x] `apps/mobile/services/waveScanService.ts` — routes through `EXPO_PUBLIC_API_BASE_URL/api/wave-compute`
+
 ### D5 — EAS build configuration
 - [x] `apps/mobile/eas.json` — updated development/preview/production profiles
 - [x] `apps/mobile/app.json` — expo-local-authentication plugin added
@@ -401,6 +412,18 @@ See **Phase 2 Readiness** section at the bottom of this file.
 ### D9 — Privacy policy and support pages
 - [x] `docs/web/privacy.html` — self-contained HTML + inline CSS, dark theme, full privacy policy
 - [x] `docs/web/support.html` — self-contained HTML + inline CSS, dark theme, FAQ + contact
+
+### D6 — RevenueCat product configuration
+- [x] `services/revenuecat/offerings.json` — full product/entitlement/offering structure for RevenueCat dashboard setup
+- [x] Product IDs confirmed correct in `PaywallScreen.tsx` (com.elliottwave.pro.pro_monthly/annual, elite_monthly/annual)
+- [x] `EXPO_PUBLIC_REVENUECAT_KEY` confirmed present in `.env`
+
+### D7 — EAS build
+- [x] `expo-build-properties`, `expo-local-authentication`, `expo-updates` installed
+- [x] EAS project created: `@danzimal/elliott-wave-pro` (ID: dc50700b-8e77-4e1e-b6f9-9253ffdd8201)
+- [x] `app.json` updated with real EAS projectId from `eas init --force`
+- [x] Apple Team ID `2YSL5AXL3P` set in `eas.json`
+- [ ] iOS production build — requires one-time interactive credential setup: `! eas build --platform ios --profile production`
 
 ### D10 — Launch checklist and handoff document
 - [x] `docs/LAUNCH_CHECKLIST.md` — infrastructure, credentials, assets, testing, legal, submission sections

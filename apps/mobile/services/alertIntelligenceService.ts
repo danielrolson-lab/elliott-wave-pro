@@ -6,8 +6,7 @@
  */
 
 const ALERT_INTELLIGENCE_URL =
-  process.env['EXPO_PUBLIC_ALERT_INTELLIGENCE_URL'] ??
-  'https://elliott-wave-pro.vercel.app/api/alert-intelligence';
+  `${process.env['EXPO_PUBLIC_API_BASE_URL'] ?? 'https://elliott-wave-pro-proxy.vercel.app'}/api/alert-intelligence`;
 
 export interface AlertContext {
   ticker:         string;

@@ -15,7 +15,7 @@ import { useGEXStore } from '../stores/gex';
 import { useCommentaryStore } from '../stores/commentary';
 
 const AI_COMMENTARY_URL =
-  process.env['EXPO_PUBLIC_AI_COMMENTARY_URL'] ?? 'https://elliott-wave-pro.vercel.app/api/ai-commentary';
+  `${process.env['EXPO_PUBLIC_API_BASE_URL'] ?? 'https://elliott-wave-pro-proxy.vercel.app'}/api/ai-commentary`;
 
 const PROB_DELTA_THRESHOLD = 0.05;
 const DEBOUNCE_MS          = 2000;

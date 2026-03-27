@@ -45,7 +45,9 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.INTERNET",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -77,7 +79,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "elliott-wave-pro"
+        "projectId": "dc50700b-8e77-4e1e-b6f9-9253ffdd8201"
       }
     }
   }
