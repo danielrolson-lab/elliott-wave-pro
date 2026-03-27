@@ -6,10 +6,9 @@ const path = require('path');
  * Config plugin: patch CocoaPods for Xcode 26 local simulator build compatibility.
  *
  * 1. fmt: force c++17 to resolve consteval errors
- * 2. PurchasesHybridCommon: pin Swift 5.0, suppress warnings-as-errors for
- *    SubscriptionPeriod ambiguous type errors
- * 3. All pods: set minimum deployment target to 14.0 to suppress
- *    IPHONEOS_DEPLOYMENT_TARGET warnings
+ * 2. PurchasesHybridCommon: Swift 5.9 + disable availability checking +
+ *    minimal strict concurrency to fix SubscriptionPeriod ambiguous type errors
+ * 3. All pods: set minimum deployment target to 14.0 to suppress warnings
  */
 function withXcode26Fixes(config) {
   return withDangerousMod(config, [
@@ -18,7 +17,22 @@ function withXcode26Fixes(config) {
       const podfilePath = path.join(cfg.modRequest.platformProjectRoot, 'Podfile');
       let contents = fs.readFileSync(podfilePath, 'utf8');
 
-      const patch = `
+      // post_integrate block — injected before the first target block
+      const postIntegrate = `
+post_integrate do |installer|
+  installer.pods_project.targets.each do |target|
+    if target.name == 'PurchasesHybridCommon'
+      target.build_configurations.each do |config|
+        config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
+      end
+    end
+  end
+end
+
+`;
+
+      // post_install patches — injected inside the existing post_install hook
+      const postInstallPatch = `
     # Fix fmt library C++ consteval errors with Xcode 26
     installer.pods_project.targets.each do |target|
       if target.name == 'fmt'
@@ -32,8 +46,8 @@ function withXcode26Fixes(config) {
     installer.pods_project.targets.each do |target|
       if target.name == 'PurchasesHybridCommon'
         target.build_configurations.each do |config|
-          config.build_settings['SWIFT_VERSION'] = '5.0'
-          config.build_settings['SWIFT_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+          config.build_settings['SWIFT_VERSION'] = '5.9'
+          config.build_settings['OTHER_SWIFT_FLAGS'] = '$(inherited) -Xfrontend -disable-availability-checking'
         end
       end
     end
@@ -48,9 +62,18 @@ function withXcode26Fixes(config) {
     end
 `;
 
-      const marker = '# This is necessary for Xcode 14';
-      if (!contents.includes('PurchasesHybridCommon') && contents.includes(marker)) {
-        contents = contents.replace(marker, patch + '    ' + marker);
+      const targetMarker = "target 'ElliottWavePro' do";
+      const postInstallMarker = '# This is necessary for Xcode 14';
+
+      if (!contents.includes('PurchasesHybridCommon')) {
+        // Inject post_integrate before the target block
+        if (contents.includes(targetMarker)) {
+          contents = contents.replace(targetMarker, postIntegrate + targetMarker);
+        }
+        // Inject post_install patches inside the existing post_install hook
+        if (contents.includes(postInstallMarker)) {
+          contents = contents.replace(postInstallMarker, postInstallPatch + '    ' + postInstallMarker);
+        }
         fs.writeFileSync(podfilePath, contents);
       }
 
