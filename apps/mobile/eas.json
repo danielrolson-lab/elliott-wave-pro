@@ -31,7 +31,7 @@
       "distribution": "store",
       "node": "18.18.0",
       "ios": {
-        "resourceClass": "large"
+        "resourceClass": "m-medium"
       },
       "android": {
         "buildType": "app-bundle"
