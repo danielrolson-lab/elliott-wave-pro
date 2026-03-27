@@ -347,8 +347,8 @@ See **Phase 2 Readiness** section at the bottom of this file.
 ### D7 — App Store preparation
 - [x] `app.json` — bundle ID com.elliottwave.pro, version 1.0.0, iOS 16.0+, Android minSdkVersion 26
 - [x] `eas.json` — production build profile (autoIncrement, distribution: store)
-- [ ] `assets/icon.png` — 1024×1024 (requires design tool; see docs/appstore/icon-spec.md)
-- [ ] `assets/splash-icon.png` — 512×512 splash icon (requires design tool)
+- [x] `assets/icon.png` — 1024×1024 (requires design tool; see docs/appstore/icon-spec.md)
+- [x] `assets/splash-icon.png` — 512×512 splash icon (requires design tool)
 - [x] `docs/appstore/metadata.txt` — name, subtitle, description, keywords, category
 - [x] `docs/appstore/privacy-policy.md` — data collection disclosure, no data sale, Supabase storage
 
