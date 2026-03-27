@@ -52,7 +52,8 @@ export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
   const counts = useWaveCountStore(
     useShallow((s) => s.counts[`${ticker}_${timeframe}`] ?? []),
   );
-  const [showInfo, setShowInfo] = useState(false);
+  const [showInfo,    setShowInfo]    = useState(false);
+  const [expandedId,  setExpandedId]  = useState<string | null>(null);
 
   if (counts.length === 0) {
     return (
@@ -89,14 +90,22 @@ export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
       )}
 
       {/* ── Scenario cards (animated reorder) ── */}
-      {counts.slice(0, 4).map((count, index) => (
-        <Animated.View
-          key={count.id}
-          layout={LAYOUT_ANIM}
-        >
-          <ScenarioCard count={count} rank={index} />
-        </Animated.View>
-      ))}
+      {counts.slice(0, 4).map((count, index) => {
+        const isExpanded = expandedId !== null ? count.id === expandedId : index < 2;
+        return (
+          <Animated.View
+            key={count.id}
+            layout={LAYOUT_ANIM}
+          >
+            <ScenarioCard
+              count={count}
+              rank={index}
+              isExpanded={isExpanded}
+              onPress={() => setExpandedId(count.id === expandedId ? null : count.id)}
+            />
+          </Animated.View>
+        );
+      })}
 
       {/* ── AI commentary (primary count only) ── */}
       <ScenarioCommentary ticker={ticker} timeframe={timeframe} />

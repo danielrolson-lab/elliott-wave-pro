@@ -15,7 +15,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
   withSpring,
@@ -106,16 +106,17 @@ function ProbabilityBar({ probability, color }: BarProps) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface ScenarioCardProps {
-  count:   WaveCount;
+  count:      WaveCount;
   /** 0=primary, 1=secondary, 2–3=collapsed */
-  rank:    number;
+  rank:       number;
+  isExpanded: boolean;
+  onPress:    () => void;
 }
 
-export function ScenarioCard({ count, rank }: ScenarioCardProps) {
+export function ScenarioCard({ count, rank, isExpanded, onPress }: ScenarioCardProps) {
   const ticker = count.allWaves[0]?.startPivot ? (count as unknown as { ticker?: string }).ticker ?? 'SPY' : 'SPY';
   const probability = count.posterior.posterior;
   const verdict     = getVerdict(count);
-  const isExpanded  = rank < 2;
   const opacity     = rank === 0 ? 1.0 : SECONDARY_OPACITY;
 
   const degreeAbbrev  = DEGREE_ABBREV[count.degree] ?? count.degree;
@@ -129,7 +130,7 @@ export function ScenarioCard({ count, rank }: ScenarioCardProps) {
   const mtfLabel      = mtfConflict ? '✗ MTF' : '✓ MTF';
 
   return (
-    <View style={[styles.card, rank === 0 && styles.cardPrimary, { opacity }]}>
+    <Pressable onPress={onPress} style={[styles.card, rank === 0 && styles.cardPrimary, { opacity }]}>
       {/* ── Row 1: header ── */}
       <View style={styles.row}>
         <View style={styles.waveNameWrap}>
@@ -193,7 +194,7 @@ export function ScenarioCard({ count, rank }: ScenarioCardProps) {
           </Text>
         </View>
       )}
-    </View>
+    </Pressable>
   );
 }
 
