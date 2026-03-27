@@ -31,8 +31,7 @@
       "distribution": "store",
       "node": "18.18.0",
       "ios": {
-        "resourceClass": "m-medium",
-        "ascAppId": "6761231249"
+        "resourceClass": "m-medium"
       },
       "android": {
         "buildType": "app-bundle"
@@ -47,7 +46,7 @@
     "production": {
       "ios": {
         "appleId": "developer@elliottwave.pro",
-        "ascAppId": "YOUR_ASC_APP_ID",
+        "ascAppId": "6761231249",
         "appleTeamId": "2YSL5AXL3P"
       },
       "android": {
