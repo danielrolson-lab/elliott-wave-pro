@@ -187,9 +187,14 @@ function WaveCountOverlay({
   const x5 = useDerivedValue(() => positions.value[4].x);
   const y5 = useDerivedValue(() => positions.value[4].y);
 
-  const color      = useDerivedValue(() => serialized.value.isBullish ? CHART_COLORS.bullBody : CHART_COLORS.bearBody);
-  const labels     = useDerivedValue(() => serialized.value.labels);
-  const lbl        = (i: number): string => labels.value[i] ?? '';
+  const color = useDerivedValue(() => serialized.value.isBullish ? CHART_COLORS.bullBody : CHART_COLORS.bearBody);
+
+  // Individual label SharedValues so Skia Text updates reactively when data arrives
+  const lbl0 = useDerivedValue(() => serialized.value.labels[0] ?? '');
+  const lbl1 = useDerivedValue(() => serialized.value.labels[1] ?? '');
+  const lbl2 = useDerivedValue(() => serialized.value.labels[2] ?? '');
+  const lbl3 = useDerivedValue(() => serialized.value.labels[3] ?? '');
+  const lbl4 = useDerivedValue(() => serialized.value.labels[4] ?? '');
 
   if (font === null) {
     return (
@@ -205,11 +210,11 @@ function WaveCountOverlay({
       <Path path={polyline} color={color} style="stroke" strokeWidth={1.5} />
 
       {/* Wave labels at each pivot endpoint */}
-      <Text x={x1} y={y1} text={lbl(0)} font={font} color={color} />
-      <Text x={x2} y={y2} text={lbl(1)} font={font} color={color} />
-      <Text x={x3} y={y3} text={lbl(2)} font={font} color={color} />
-      <Text x={x4} y={y4} text={lbl(3)} font={font} color={color} />
-      <Text x={x5} y={y5} text={lbl(4)} font={font} color={color} />
+      <Text x={x1} y={y1} text={lbl0} font={font} color={color} />
+      <Text x={x2} y={y2} text={lbl1} font={font} color={color} />
+      <Text x={x3} y={y3} text={lbl2} font={font} color={color} />
+      <Text x={x4} y={y4} text={lbl3} font={font} color={color} />
+      <Text x={x5} y={y5} text={lbl4} font={font} color={color} />
     </Group>
   );
 }
