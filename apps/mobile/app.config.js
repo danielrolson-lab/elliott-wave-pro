@@ -3,11 +3,12 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Config plugin: patch CocoaPods for Xcode 26 local simulator build compatibility.
+ * Config plugin: patch CocoaPods post_install for Xcode 26 local simulator builds.
  *
- * 1. All pods: set IPHONEOS_DEPLOYMENT_TARGET = 14.0
- * 2. fmt: CLANG_CXX_LANGUAGE_STANDARD = c++17, CLANG_CXX_LIBRARY = libc++
- *    Fixes "Call to consteval function is not a constant expression" in Xcode 26.
+ * Issue 1: EXConstants — skip Metro-dependent "Generate app.config" script phase.
+ * Issue 2: fmt — CLANG_CXX_LANGUAGE_STANDARD=c++17 + CLANG_CXX_LIBRARY=libc++
+ *           fixes "Call to consteval function is not a constant expression".
+ * Issue 3: All pods — IPHONEOS_DEPLOYMENT_TARGET=14.0 suppresses warnings.
  */
 function withXcode26Fixes(config) {
   return withDangerousMod(config, [
@@ -16,11 +17,24 @@ function withXcode26Fixes(config) {
       const podfilePath = path.join(cfg.modRequest.platformProjectRoot, 'Podfile');
       let contents = fs.readFileSync(podfilePath, 'utf8');
 
-      const postInstallPatch = `
+      const patch = `
+    # Issue 1: EXConstants — skip Metro-dependent app.config generation script
+    # for local simulator builds where Metro is not running.
     installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+      if target.name == 'EXConstants'
+        target.build_configurations.each do |config|
+          config.build_settings['EXPO_UPDATES_FINGERPRINT_OVERRIDE'] = '1'
+        end
+        target.shell_script_build_phases.each do |phase|
+          if phase.name.include?('Generate app.config')
+            phase.shell_script = 'echo "Skipped for local build"'
+          end
+        end
       end
+    end
+
+    # Issue 2: fmt — fix C++ consteval errors in Xcode 26.
+    installer.pods_project.targets.each do |target|
       if target.name == 'fmt'
         target.build_configurations.each do |config|
           config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
@@ -29,11 +43,18 @@ function withXcode26Fixes(config) {
       end
     end
 
+    # Issue 3: Set minimum deployment target to 14.0 for all pods.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+      end
+    end
+
 `;
 
       const marker = '# This is necessary for Xcode 14';
-      if (!contents.includes("'fmt'") && contents.includes(marker)) {
-        contents = contents.replace(marker, postInstallPatch + '    ' + marker);
+      if (!contents.includes("'EXConstants'") && contents.includes(marker)) {
+        contents = contents.replace(marker, patch + '    ' + marker);
         fs.writeFileSync(podfilePath, contents);
       }
 
