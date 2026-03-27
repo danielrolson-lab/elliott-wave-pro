@@ -87,6 +87,7 @@ export function ChartScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.container}>
         <View style={styles.chartHeader}>
+          <Text style={styles.tickerLabel}>{ACTIVE_TICKER}</Text>
           <TimeframeSelector activeTimeframe={timeframe} onSelect={setTimeframe} />
           {isIPad && (
             <Pressable
@@ -202,6 +203,14 @@ const styles = StyleSheet.create({
     flexDirection:     'row',
     alignItems:        'center',
     paddingRight:      8,
+  },
+  tickerLabel: {
+    color:      CHART_COLORS.textPrimary,
+    fontSize:   17,
+    fontWeight: '700',
+    paddingHorizontal: 12,
+    paddingVertical:   6,
+    letterSpacing:     0.5,
   },
   comparePill: {
     paddingHorizontal: 10,

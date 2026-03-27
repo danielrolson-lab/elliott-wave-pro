@@ -112,7 +112,8 @@ function labelPos(
 
 function serializeCount(count: WaveCount, sliceOffset: number): SerializedCount {
   const waves = count.allWaves;
-  if (!waves || waves.length < 5) return NULL_COUNT;
+  // Support partial in-progress counts (min 2 waves = 3 pivots)
+  if (!waves || waves.length < 2) return NULL_COUNT;
 
   const w1 = waves[0];
   if (!w1.startPivot || !w1.endPivot) return NULL_COUNT;
@@ -127,7 +128,8 @@ function serializeCount(count: WaveCount, sliceOffset: number): SerializedCount 
       price:    wave.endPivot.price,
     });
   }
-  if (pivots.length < 6) return NULL_COUNT;
+  // Need at least 2 points to draw a polyline segment
+  if (pivots.length < 2) return NULL_COUNT;
 
   return {
     isBullish: w1.startPivot.price < w1.endPivot.price,

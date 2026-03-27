@@ -163,15 +163,7 @@ export function checkRules(
     }
   }
 
-  // Rule 4 — Alternation: Wave 2 sharp ↔ Wave 4 flat
-  const w2Sharp = m.w2RetracePct > 0.5;
-  const w4Sharp = m.w4RetracePct > 0.5;
-  if (w2Sharp === w4Sharp) {
-    const label = w2Sharp ? 'sharp (>50%)' : 'flat (<50%)';
-    violations.push(
-      `RULE4: No alternation — both Wave 2 (${(m.w2RetracePct * 100).toFixed(1)}%) and Wave 4 (${(m.w4RetracePct * 100).toFixed(1)}%) are ${label}`,
-    );
-  }
+  // Rule 4 moved to checkSoftRules — alternation is common to violate in real markets
 
   return violations;
 }
@@ -207,6 +199,18 @@ export function checkSoftRules(
     warnings.push(
       `SOFT:W5_FIB618: Wave 5 ≈ 0.618× Wave 1 (ratio ${w5Ratio.toFixed(3)}) — classic target`,
     );
+  }
+
+  // Rule 4 (soft): Alternation — W2 and W4 should differ in retracement depth
+  if (m.w1 > 0 && m.w3 > 0) {
+    const w2Sharp = m.w2RetracePct > 0.5;
+    const w4Sharp = m.w4RetracePct > 0.5;
+    if (w2Sharp === w4Sharp) {
+      const lbl = w2Sharp ? 'sharp (>50%)' : 'flat (<50%)';
+      warnings.push(
+        `SOFT:RULE4_ALTERNATION: Both W2 (${(m.w2RetracePct * 100).toFixed(1)}%) and W4 (${(m.w4RetracePct * 100).toFixed(1)}%) are ${lbl}`,
+      );
+    }
   }
 
   return warnings;
@@ -418,6 +422,120 @@ export function tryBuildDiagonal(
   };
 }
 
+// ── Partial (in-progress) count builder ──────────────────────────────────────
+
+/**
+ * Attempts to build an in-progress WaveCount from a trailing 3–5 pivot window.
+ *
+ * k=3 → W1 + W2 complete, currently in Wave 3
+ * k=4 → W1-W3 complete, currently in Wave 4
+ * k=5 → W1-W4 complete, currently in Wave 5
+ *
+ * Returns null if the minimal validity constraints aren't met.
+ */
+function buildPartialCount(
+  pivots: Pivot[],
+  isBullish: boolean,
+  ticker: string,
+  timeframe: string,
+): WaveCount | null {
+  const k = pivots.length;
+  if (k < 3 || k > 5) return null;
+
+  const prices = pivots.map((p) => p.price);
+  const degree = degreeForTimeframe(timeframe);
+
+  // Validate completed waves
+  if (isBullish) {
+    if (prices[1] <= prices[0]) return null;                          // W1 must go up
+    if (k >= 3 && prices[2] >= prices[1]) return null;               // W2 must retrace
+    if (k >= 3 && prices[2] < prices[0]) return null;                // W2 ≤ 100% of W1
+    if (k >= 4 && prices[3] <= prices[2]) return null;               // W3 must go up
+    if (k >= 5 && prices[4] >= prices[3]) return null;               // W4 must retrace
+    if (k >= 5 && prices[4] <= prices[1]) return null;               // W4 no overlap W1
+  } else {
+    if (prices[1] >= prices[0]) return null;
+    if (k >= 3 && prices[2] <= prices[1]) return null;
+    if (k >= 3 && prices[2] > prices[0]) return null;
+    if (k >= 4 && prices[3] >= prices[2]) return null;
+    if (k >= 5 && prices[4] <= prices[3]) return null;
+    if (k >= 5 && prices[4] >= prices[1]) return null;
+  }
+
+  const waveLabels: Array<WaveNode['label']> = ['1', '2', '3', '4', '5'];
+  const impulseLabels = new Set(['1', '3', '5']);
+
+  const allWaves: WaveNode[] = [];
+
+  // Build completed waves (pivots[i] → pivots[i+1])
+  for (let i = 0; i < k - 1; i++) {
+    const label = waveLabels[i];
+    const retracePct = i > 0 && i < k - 1
+      ? Math.abs(prices[i] - prices[i - 1]) / Math.abs(prices[i - 1] - prices[i - 2] || 1)
+      : 0;
+    const structure: WaveNode['structure'] = impulseLabels.has(label)
+      ? 'impulse'
+      : (retracePct > 0.5 ? 'zigzag' : 'flat');
+    allWaves.push(buildWaveNode(label, pivots[i], pivots[i + 1], structure, degree));
+  }
+
+  // Add the in-progress wave (no endPivot)
+  const inProgressLabel = waveLabels[k - 1];
+  const inProgressStructure: WaveNode['structure'] = impulseLabels.has(inProgressLabel) ? 'impulse' : 'zigzag';
+  allWaves.push(buildWaveNode(inProgressLabel, pivots[k - 1], null, inProgressStructure, degree));
+
+  const now = Date.now();
+  const w1Len = Math.abs(prices[1] - prices[0]);
+  const dir = isBullish ? 1 : -1;
+  const anchor = prices[k - 1];
+  const targets: [number, number, number] = [
+    anchor + dir * w1Len * 1.618,
+    anchor + dir * w1Len * 2.618,
+    anchor + dir * w1Len * 4.236,
+  ];
+
+  const id = makeCountId(ticker, timeframe, pivots[0].index, pivots[k - 1].index, `:p${k}`);
+  const stopPrice = isBullish ? prices[0] - w1Len * 0.05 : prices[0] + w1Len * 0.05;
+  const riskPerUnit = Math.abs(anchor - stopPrice);
+  const rewardUnit  = Math.abs(targets[0] - anchor);
+  const rrRatio = riskPerUnit > 0 ? rewardUnit / riskPerUnit : 0;
+  const ciWidth = w1Len * 0.3;
+
+  const posterior: WavePosterior = {
+    countId: id,
+    prior: 0.25,
+    posterior: 0.25,
+    likelihood_components: {
+      fib_confluence: 0.5, volume_profile: 0.5, rsi_divergence: 0.5,
+      momentum_alignment: 0.5, breadth_alignment: 0.5, gex_alignment: 0.5,
+      mtf_alignment: 0.5, time_symmetry: 0.5,
+    },
+    decay_factor: 1.0,
+    last_updated: now,
+    invalidation_price: prices[0],
+    confidence_interval: [targets[0] - ciWidth, targets[0] + ciWidth],
+    mtf_conflict: false,
+  };
+
+  return {
+    id,
+    ticker,
+    timeframe,
+    degree,
+    currentWave: allWaves[allWaves.length - 1],
+    allWaves,
+    posterior,
+    targets,
+    stopPrice,
+    rrRatio,
+    isValid: true,
+    violations: [],
+    softWarnings: [`PARTIAL:WAVE${inProgressLabel}_FORMING`],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -479,6 +597,32 @@ export function generateWaveCounts(
           valid.push(diag);
         }
       }
+    }
+  }
+
+  // ── Trailing partial counts (in-progress wave detection) ─────────────────────
+  // Try the most recent 5, 4, or 3 pivots to detect what wave is forming now.
+  // Only add the longest valid partial count (stops at first success).
+  for (const k of [5, 4, 3]) {
+    if (pivots.length < k) continue;
+    const tail = pivots.slice(-k);
+
+    // Must alternate
+    let tailAlternates = true;
+    for (let i = 0; i < tail.length - 1; i++) {
+      if (isHighPivot(tail[i]) === isHighPivot(tail[i + 1])) {
+        tailAlternates = false;
+        break;
+      }
+    }
+    if (!tailAlternates) continue;
+
+    const isBull = !isHighPivot(tail[0]);
+    const partial = buildPartialCount(tail, isBull, ticker, timeframe);
+    if (partial && !seen.has(partial.id)) {
+      seen.add(partial.id);
+      valid.push(partial);
+      break; // one partial count is enough
     }
   }
 

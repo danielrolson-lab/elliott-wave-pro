@@ -106,10 +106,34 @@ const MACRO_ITEMS = [
   { label: 'DXY',  suffix: '' },
 ] as const;
 
+const POLYGON_API_KEY = process.env['EXPO_PUBLIC_POLYGON_API_KEY'] ?? '';
+
+interface SnapshotQuote { price: number; change: number }
+
+async function fetchIndexSnapshots(): Promise<Record<string, SnapshotQuote>> {
+  if (!POLYGON_API_KEY) return {};
+  try {
+    const url = `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?tickers=SPY,QQQ,IWM&apiKey=${POLYGON_API_KEY}`;
+    const res  = await fetch(url);
+    if (!res.ok) return {};
+    const json = await res.json() as { tickers?: Array<{ ticker: string; todaysChangePerc?: number; day?: { c?: number } }> };
+    const out: Record<string, SnapshotQuote> = {};
+    for (const t of json.tickers ?? []) {
+      const price = t.day?.c ?? 0;
+      const change = t.todaysChangePerc ?? 0;
+      if (price > 0) out[t.ticker] = { price, change };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function HomeScreen() {
   const [statusInfo, setStatusInfo] = useState<StatusInfo>(() => computeStatus(new Date()));
+  const [snapshots,  setSnapshots]  = useState<Record<string, SnapshotQuote>>({});
   const quotes  = useMarketDataStore((s) => s.quotes);
   const regimes = useMarketDataStore((s) => s.regimes);
 
@@ -117,6 +141,11 @@ export function HomeScreen() {
   useEffect(() => {
     const id = setInterval(() => setStatusInfo(computeStatus(new Date())), 1000);
     return () => clearInterval(id);
+  }, []);
+
+  // BUG-015: fetch latest SPY/QQQ/IWM prices on mount (fallback when WS not connected)
+  useEffect(() => {
+    void fetchIndexSnapshots().then(setSnapshots);
   }, []);
 
   return (
@@ -141,8 +170,9 @@ export function HomeScreen() {
         <View style={styles.stripRow}>
           {INDEX_TICKERS.map((ticker) => {
             const q = quotes[ticker];
-            const price  = q?.last        ?? null;
-            const change = q?.changePercent ?? null;
+            // Live WS quote takes precedence; fall back to Polygon REST snapshot
+            const price  = q?.last         ?? snapshots[ticker]?.price  ?? null;
+            const change = q?.changePercent ?? snapshots[ticker]?.change ?? null;
             const isPos  = (change ?? 0) >= 0;
             return (
               <View key={ticker} style={styles.stripCard}>

@@ -135,6 +135,12 @@ export function useWaveEngine(
   });
   const prevLen = useRef(0);
 
+  // BUG-020: reset prevLen and clear stale counts when ticker or timeframe changes
+  useEffect(() => {
+    prevLen.current = 0;
+    setResult({ waveCounts: EMPTY, sliceOffset: 0 });
+  }, [ticker, timeframe]);
+
   useEffect(() => {
     if (candles.length < 20) return;
     if (candles.length === prevLen.current) return;
