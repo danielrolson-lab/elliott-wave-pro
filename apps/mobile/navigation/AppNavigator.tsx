@@ -217,7 +217,6 @@ function RootNavigator() {
 export function AppNavigator() {
   const session = useAuthStore((s) => s.session);
   const loading = useAuthStore((s) => s.loading);
-  const { setSession, setLoading } = useAuthStore();
 
   // Start alert evaluation engine for the lifetime of the app
   useAlertEngine();
@@ -225,21 +224,32 @@ export function AppNavigator() {
   // Initialize RevenueCat + sync subscription tier
   useRevenueCat();
 
-  // Bootstrap: resolve persisted session + subscribe to future changes
+  // Bootstrap: resolve persisted session + subscribe to future changes.
+  // Uses useAuthStore.getState() instead of hook-destructured actions to avoid
+  // calling set() during Supabase's synchronous INITIAL_SESSION firing, which
+  // happens mid-useEffect before NavigationContainer's context chain is ready.
   useEffect(() => {
-    // Get the session from MMKV-backed Supabase storage (synchronous on device)
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+      try {
+        useAuthStore.getState().setSession(data.session);
+        useAuthStore.getState().setLoading(false);
+      } catch (_e) {
+        // store not yet ready — safe to ignore, loading stays true until next event
+      }
+    }).catch(() => {
+      try { useAuthStore.getState().setLoading(false); } catch (_e) {}
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      setLoading(false);
+      try {
+        useAuthStore.getState().setSession(newSession);
+        useAuthStore.getState().setLoading(false);
+      } catch (_e) {
+        // store not yet ready
+      }
     });
 
     return () => subscription.unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
