@@ -30,7 +30,7 @@
       "autoIncrement": true,
       "distribution": "store",
       "ios": {
-        "resourceClass": "large"
+        "resourceClass": "m-medium"
       },
       "android": {
         "buildType": "app-bundle"
