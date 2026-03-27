@@ -2,6 +2,7 @@
   "expo": {
     "name": "Elliott Wave Pro",
     "slug": "elliott-wave-pro",
+    "owner": "danzimal",
     "version": "1.0.0",
     "runtimeVersion": {
       "policy": "appVersion"
@@ -52,7 +53,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router",
       [
         "expo-build-properties",
         {

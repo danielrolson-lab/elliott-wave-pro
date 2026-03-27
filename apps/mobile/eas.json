@@ -44,7 +44,7 @@
       "ios": {
         "appleId": "developer@elliottwave.pro",
         "ascAppId": "YOUR_ASC_APP_ID",
-        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+        "appleTeamId": "2YSL5AXL3P"
       },
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
