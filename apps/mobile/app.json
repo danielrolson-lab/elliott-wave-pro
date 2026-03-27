@@ -16,7 +16,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.elliottwave.pro",
-      "usesAppleSignIn": true,
       "buildNumber": "6",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Elliott Wave Pro uses the microphone for voice navigation commands.",

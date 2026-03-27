@@ -3,7 +3,6 @@
  *
  * Sign in / Sign up with:
  *   • Email + password (toggle between sign-in and sign-up)
- *   • Apple Sign-In (iOS only — expo-apple-authentication)
  *   • Google OAuth (expo-web-browser + Supabase PKCE flow)
  *
  * On success the AppNavigator's onAuthStateChange listener detects the new
@@ -23,7 +22,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import { supabase } from '../utils/supabase';
@@ -79,34 +77,6 @@ export function AuthScreen() {
         const { error: e } = await supabase.auth.signUp({ email: email.trim(), password: pass });
         if (e) setError(e.message);
         else   setInfo('Check your email to confirm your account.');
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // ── Apple Sign-In ───────────────────────────────────────────────────────────
-
-  async function handleApple() {
-    clearFeedback();
-    setBusy(true);
-    try {
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-      const { error: e } = await supabase.auth.signInWithIdToken({
-        provider: 'apple',
-        token:    credential.identityToken ?? '',
-      });
-      if (e) setError(e.message);
-    } catch (e: unknown) {
-      // User cancelled — code is 'ERR_REQUEST_CANCELED'
-      const err = e as { code?: string; message?: string };
-      if (err.code !== 'ERR_REQUEST_CANCELED') {
-        setError(err.message ?? 'Apple Sign-In failed');
       }
     } finally {
       setBusy(false);
@@ -204,17 +174,6 @@ export function AuthScreen() {
             <Text style={styles.dividerText}>or continue with</Text>
             <View style={styles.dividerLine} />
           </View>
-
-          {/* Apple Sign-In (iOS only) */}
-          {Platform.OS === 'ios' && (
-            <AppleAuthentication.AppleAuthenticationButton
-              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-              cornerRadius={8}
-              style={styles.appleBtn}
-              onPress={handleApple}
-            />
-          )}
 
           {/* Google OAuth */}
           <TouchableOpacity
@@ -344,10 +303,6 @@ const styles = StyleSheet.create({
   dividerText: {
     color:    DARK.textMuted,
     fontSize: 12,
-  },
-  appleBtn: {
-    height:       48,
-    marginBottom: 12,
   },
   oauthBtn: {
     backgroundColor: DARK.surface,
