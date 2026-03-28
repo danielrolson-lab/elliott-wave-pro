@@ -9,12 +9,16 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMarketDataStore } from '../stores/marketData';
+import { useWatchlistStore } from '../stores/watchlist';
 import { CHART_COLORS } from '../components/chart/chartTypes';
 import { RegimeBadge } from '../components/common/RegimeBadge';
 import { REGIME_META } from '../utils/regimeClassifier';
+import type { RootTabParamList } from '../navigation/AppNavigator';
 import type { MarketRegime } from '@elliott-wave-pro/wave-engine';
 
 // ── Market hours (NYSE — ET, UTC-4 or UTC-5) ─────────────────────────────────
@@ -110,21 +114,38 @@ const POLYGON_API_KEY = process.env['EXPO_PUBLIC_POLYGON_API_KEY'] ?? '';
 
 interface SnapshotQuote { price: number; change: number }
 
+interface PolygonTickerSnapshot {
+  ticker:            string;
+  todaysChangePerc?: number;
+  day?:              { c?: number; o?: number };
+  lastTrade?:        { p?: number };
+  prevDay?:          { c?: number };
+}
+
 async function fetchIndexSnapshots(): Promise<Record<string, SnapshotQuote>> {
-  if (!POLYGON_API_KEY) return {};
+  if (!POLYGON_API_KEY) {
+    console.warn('[HomeScreen] EXPO_PUBLIC_POLYGON_API_KEY not set');
+    return {};
+  }
   try {
     const url = `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?tickers=SPY,QQQ,IWM&apiKey=${POLYGON_API_KEY}`;
     const res  = await fetch(url);
-    if (!res.ok) return {};
-    const json = await res.json() as { tickers?: Array<{ ticker: string; todaysChangePerc?: number; day?: { c?: number } }> };
+    if (!res.ok) {
+      console.warn('[HomeScreen] snapshot fetch failed:', res.status);
+      return {};
+    }
+    const json = await res.json() as { tickers?: PolygonTickerSnapshot[] };
     const out: Record<string, SnapshotQuote> = {};
     for (const t of json.tickers ?? []) {
-      const price = t.day?.c ?? 0;
+      // Priority: last trade > today's close > previous close
+      const price = t.lastTrade?.p ?? t.day?.c ?? t.prevDay?.c ?? 0;
       const change = t.todaysChangePerc ?? 0;
+      console.log(`[HomeScreen] ${t.ticker}: price=${price} change=${change}`);
       if (price > 0) out[t.ticker] = { price, change };
     }
     return out;
-  } catch {
+  } catch (e) {
+    console.warn('[HomeScreen] snapshot fetch error:', e);
     return {};
   }
 }
@@ -132,10 +153,12 @@ async function fetchIndexSnapshots(): Promise<Record<string, SnapshotQuote>> {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function HomeScreen() {
+  const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   const [statusInfo, setStatusInfo] = useState<StatusInfo>(() => computeStatus(new Date()));
   const [snapshots,  setSnapshots]  = useState<Record<string, SnapshotQuote>>({});
-  const quotes  = useMarketDataStore((s) => s.quotes);
-  const regimes = useMarketDataStore((s) => s.regimes);
+  const quotes         = useMarketDataStore((s) => s.quotes);
+  const regimes        = useMarketDataStore((s) => s.regimes);
+  const watchlistItems = useWatchlistStore((s) => s.items);
 
   // Tick every second for the countdown
   useEffect(() => {
@@ -150,6 +173,18 @@ export function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* ── Screen header ── */}
+      <View style={styles.screenHeader}>
+        <Text style={styles.screenTitle}>Markets</Text>
+        <Pressable
+          style={styles.editBtn}
+          onPress={() => navigation.navigate('Watchlist')}
+          hitSlop={8}
+        >
+          <Text style={styles.editBtnText}>Edit</Text>
+        </Pressable>
+      </View>
+
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
         {/* ── Market status badge ── */}
@@ -224,6 +259,46 @@ export function HomeScreen() {
           ))}
         </View>
 
+        {/* ── Watchlist preview ── */}
+        {watchlistItems.length > 0 && (
+          <>
+            <View style={styles.watchlistHeader}>
+              <Text style={styles.sectionHeader}>WATCHLIST</Text>
+              <Pressable onPress={() => navigation.navigate('Watchlist')} hitSlop={8}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </Pressable>
+            </View>
+            {watchlistItems.slice(0, 6).map((item) => {
+              const q       = quotes[item.id];
+              const price   = item.lastPrice ?? q?.last ?? null;
+              const change  = item.changePercent ?? q?.changePercent ?? null;
+              const isPos   = (change ?? 0) >= 0;
+              return (
+                <Pressable
+                  key={item.id}
+                  style={styles.watchlistRow}
+                  onPress={() => navigation.navigate('Chart')}
+                >
+                  <View style={styles.watchlistLeft}>
+                    <Text style={styles.watchlistTicker}>{item.id}</Text>
+                    {item.waveLabel && (
+                      <Text style={styles.watchlistWave}>W{item.waveLabel}</Text>
+                    )}
+                  </View>
+                  <View style={styles.watchlistRight}>
+                    <Text style={styles.watchlistPrice}>
+                      {price !== null ? `$${price.toFixed(2)}` : '—'}
+                    </Text>
+                    <Text style={[styles.watchlistChange, { color: isPos ? CHART_COLORS.bullBody : CHART_COLORS.bearBody }]}>
+                      {change !== null ? `${isPos ? '+' : ''}${change.toFixed(2)}%` : '—'}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </>
+        )}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -236,6 +311,35 @@ const styles = StyleSheet.create({
     flex:            1,
     backgroundColor: CHART_COLORS.background,
   },
+
+  // Screen header (title + Edit button)
+  screenHeader: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    paddingHorizontal: 16,
+    paddingVertical:   10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: CHART_COLORS.gridLine,
+  },
+  screenTitle: {
+    color:      CHART_COLORS.textPrimary,
+    fontSize:   18,
+    fontWeight: '700',
+  },
+  editBtn: {
+    paddingHorizontal: 12,
+    paddingVertical:    5,
+    borderRadius:       6,
+    borderWidth:        1,
+    borderColor:        CHART_COLORS.gridLine,
+  },
+  editBtnText: {
+    color:      '#1d4ed8',
+    fontSize:   13,
+    fontWeight: '600',
+  },
+
   scroll: {
     flex: 1,
   },
@@ -328,5 +432,57 @@ const styles = StyleSheet.create({
     fontSize:   9,
     fontWeight: '500',
     marginTop:  2,
+  },
+
+  // Watchlist preview
+  watchlistHeader: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    marginBottom:   8,
+  },
+  seeAllText: {
+    color:    '#1d4ed8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  watchlistRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    backgroundColor:   '#161B22',
+    borderRadius:       8,
+    paddingHorizontal: 14,
+    paddingVertical:   11,
+    marginBottom:       8,
+    borderWidth:        1,
+    borderColor:        CHART_COLORS.gridLine,
+  },
+  watchlistLeft: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           8,
+  },
+  watchlistTicker: {
+    color:      CHART_COLORS.textPrimary,
+    fontSize:   14,
+    fontWeight: '700',
+  },
+  watchlistWave: {
+    color:      CHART_COLORS.textMuted,
+    fontSize:   11,
+    fontWeight: '500',
+  },
+  watchlistRight: {
+    alignItems: 'flex-end',
+  },
+  watchlistPrice: {
+    color:      CHART_COLORS.textPrimary,
+    fontSize:   14,
+    fontWeight: '600',
+  },
+  watchlistChange: {
+    fontSize:   12,
+    fontWeight: '500',
   },
 });

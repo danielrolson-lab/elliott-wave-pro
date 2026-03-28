@@ -17,6 +17,7 @@ import {
   Alert,
   ScrollView,
   Pressable,
+  Switch,
 } from 'react-native';
 import { SafeAreaView }      from 'react-native-safe-area-context';
 import { useNavigation }     from '@react-navigation/native';
@@ -25,6 +26,7 @@ import { useTheme }          from '../theme/ThemeContext';
 import { useThemeStore }     from '../stores/theme';
 import { supabase }          from '../utils/supabase';
 import { useSubscriptionStore } from '../stores/subscription';
+import { useNotificationStore } from '../stores/notifications';
 
 // Phase 3 navigation — uses the root stack
 type Phase3Nav = {
@@ -75,6 +77,8 @@ export function SettingsScreen() {
   const setOverride = useThemeStore((s) => s.setOverride);
   const tier = useSubscriptionStore((s) => s.tier);
   const navigation = useNavigation<NativeStackNavigationProp<Phase3StackParamList>>();
+  const waveAlertsEnabled    = useNotificationStore((s) => s.waveAlertsEnabled);
+  const setWaveAlertsEnabled = useNotificationStore((s) => s.setWaveAlertsEnabled);
 
   async function handleSignOut() {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -149,6 +153,25 @@ export function SettingsScreen() {
               </Pressable>
             );
           })}
+        </View>
+
+        {/* Notifications section */}
+        <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 24 }]}>NOTIFICATIONS</Text>
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Wave Completion Alerts</Text>
+              <Text style={[styles.rowSub, { color: theme.textMuted }]}>
+                Notify when wave 5, wave 3 peak, or invalidation detected
+              </Text>
+            </View>
+            <Switch
+              value={waveAlertsEnabled}
+              onValueChange={setWaveAlertsEnabled}
+              trackColor={{ true: '#1d4ed8', false: theme.border }}
+              thumbColor={waveAlertsEnabled ? '#ffffff' : theme.textMuted}
+            />
+          </View>
         </View>
 
         {/* Theme section */}
@@ -272,5 +295,9 @@ const styles = StyleSheet.create({
     textAlign:    'center',
     fontSize:     12,
     paddingBottom: 8,
+  },
+  rowSub: {
+    fontSize:  12,
+    marginTop: 2,
   },
 });

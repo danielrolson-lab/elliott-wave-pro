@@ -26,6 +26,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, { LinearTransition } from 'react-native-reanimated';
 import { useShallow } from 'zustand/react/shallow';
 import { useWaveCountStore } from '../../stores/waveCount';
+import { useMarketDataStore } from '../../stores/marketData';
 import { ScenarioCard } from './ScenarioCard';
 import { ScenarioCommentary } from './ScenarioCommentary';
 import { DARK } from '../../theme/colors';
@@ -52,6 +53,10 @@ export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
   const counts = useWaveCountStore(
     useShallow((s) => s.counts[`${ticker}_${timeframe}`] ?? []),
   );
+  const pinCount      = useWaveCountStore((s) => s.pinCount);
+  const quotes        = useMarketDataStore((s) => s.quotes);
+  const currentPrice  = quotes[ticker]?.last ?? 0;
+
   const [showInfo,    setShowInfo]    = useState(false);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
 
@@ -101,7 +106,11 @@ export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
               count={count}
               rank={index}
               isExpanded={isExpanded}
-              onPress={() => setExpandedId(count.id === expandedId ? null : count.id)}
+              currentPrice={currentPrice}
+              onPress={() => {
+                setExpandedId(count.id === expandedId ? null : count.id);
+                pinCount(`${ticker}_${timeframe}`, count.id);
+              }}
             />
           </Animated.View>
         );

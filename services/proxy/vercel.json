@@ -1,28 +1,10 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "ws-proxy.ts",
-      "use": "@vercel/node",
-      "config": {
-        "maxDuration": 300
-      }
-    },
-    { "src": "ai-commentary.ts",     "use": "@vercel/edge" },
-    { "src": "alert-intelligence.ts","use": "@vercel/edge" },
-    { "src": "wave-compute.ts",      "use": "@vercel/edge" },
-    { "src": "quant-api.ts",         "use": "@vercel/edge" }
-  ],
-  "routes": [
-    { "src": "/api/ws",                 "dest": "/ws-proxy.ts" },
-    { "src": "/health",                 "dest": "/ws-proxy.ts" },
-    { "src": "/api/ai-commentary",      "dest": "/ai-commentary" },
-    { "src": "/api/alert-intelligence", "dest": "/alert-intelligence" },
-    { "src": "/api/wave-compute",       "dest": "/wave-compute" },
-    { "src": "/api/wave-count",         "dest": "/quant-api" },
-    { "src": "/api/scenarios",          "dest": "/quant-api" },
-    { "src": "/api/regime",             "dest": "/quant-api" },
-    { "src": "/api/gex",                "dest": "/quant-api" },
-    { "src": "/api/signals",            "dest": "/quant-api" }
+  "rewrites": [
+    { "source": "/health",         "destination": "/api/health" },
+    { "source": "/api/wave-count", "destination": "/api/quant-api" },
+    { "source": "/api/scenarios",  "destination": "/api/quant-api" },
+    { "source": "/api/regime",     "destination": "/api/quant-api" },
+    { "source": "/api/gex",        "destination": "/api/quant-api" },
+    { "source": "/api/signals",    "destination": "/api/quant-api" }
   ]
 }

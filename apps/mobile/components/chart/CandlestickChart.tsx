@@ -20,13 +20,13 @@
  * block the JS thread during pan / pinch.
  */
 
-import React, { useEffect, useMemo } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import {
   Canvas,
   Path,
   Line,
-  Text,
+  Text as SkiaText,
   Group,
   Skia,
   type SkFont,
@@ -36,6 +36,7 @@ import {
   useSharedValue,
   useDerivedValue,
   clamp,
+  runOnJS,
 } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -45,6 +46,7 @@ import { CHART_COLORS, CHART_LAYOUT } from './chartTypes';
 import { WaveOverlayLayer }       from './WaveOverlayLayer';
 import { FibonacciOverlayLayer }  from './FibonacciOverlayLayer';
 import { GEXOverlayLayer }        from './GEXOverlayLayer';
+import { WaveChannelLayer }       from './WaveChannelLayer';
 import type { GEXLevels }         from '../../utils/gexCalculator';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -59,9 +61,24 @@ export interface CandlestickChartProps {
   waveSliceOffset?: number;
   /** GEX levels to overlay (Zero GEX, Call Wall, Put Wall). */
   gexLevels?:          GEXLevels | null;
+  /** Stop/invalidation price for the active scenario (shown as red dashed line). */
+  activeStopPrice?:    number;
   /** Shared values lifted to App level so IndicatorPanel can sync. */
   externalTranslateX?: SharedValue<number>;
   externalCandleW?:    SharedValue<number>;
+}
+
+// ── Crosshair HUD data ────────────────────────────────────────────────────────
+
+interface HudData {
+  open: number; high: number; low: number; close: number;
+  volume: number; pctChange: number; xRight: boolean;
+}
+
+function formatVolume(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000)     return `${Math.round(v / 1_000)}K`;
+  return String(Math.round(v));
 }
 
 // ── EMA computation (JS thread) ──────────────────────────────────────────────
@@ -224,6 +241,7 @@ export function CandlestickChart({
   waveCounts = [],
   waveSliceOffset = 0,
   gexLevels = null,
+  activeStopPrice = 0,
   externalTranslateX,
   externalCandleW,
 }: CandlestickChartProps) {
@@ -248,6 +266,20 @@ export function CandlestickChart({
       return null;
     }
   }, []);
+
+  // ── Crosshair HUD state (JS thread) ──────────────────────────────────────
+  const [hudData, setHudData] = useState<HudData | null>(null);
+
+  const updateHudJS = useCallback((idx: number, xRight: boolean) => {
+    const c    = candles[idx];
+    const prev = idx > 0 ? candles[idx - 1] : null;
+    if (!c) { setHudData(null); return; }
+    const prevClose = prev?.close ?? c.open;
+    const pctChange = ((c.close - prevClose) / prevClose) * 100;
+    setHudData({ open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume, pctChange, xRight });
+  }, [candles]);
+
+  const clearHudJS = useCallback(() => setHudData(null), []);
 
   // ── Gesture state (SharedValues — UI thread) ───────────────────────────────
   // Always create internal fallbacks (hooks must not be conditional).
@@ -487,25 +519,25 @@ export function CandlestickChart({
       translateX.value = clamp(panStartTx.value + e.translationX, minTx, maxTx);
     });
 
-  // Tap for crosshair
+  // Tap for crosshair + HUD
   const tapGesture = Gesture.Tap().onEnd((e) => {
     'worklet';
-    if (crosshairVisible.value) {
-      // Move to new position or dismiss if tapped same area
-      crosshairX.value = e.x;
-    } else {
-      crosshairX.value = e.x;
-      crosshairVisible.value = true;
-    }
+    const { startIdx, endIdx, tx, cw } = layoutDV.value;
+    const idx    = Math.min(endIdx - 1, Math.max(startIdx, Math.round((e.x - tx) / cw)));
+    const xRight = e.x > CHART_AREA_W / 2;
+    runOnJS(updateHudJS)(idx, xRight);
+    crosshairX.value = e.x;
+    crosshairVisible.value = true;
   });
 
-  // Long press dismisses crosshair
+  // Long press dismisses crosshair + HUD
   const longPressGesture = Gesture.LongPress()
     .minDuration(300)
     .onStart(() => {
       'worklet';
       crosshairVisible.value = false;
       crosshairX.value = -1;
+      runOnJS(clearHudJS)();
     });
 
   const composedGesture = Gesture.Simultaneous(
@@ -554,7 +586,7 @@ export function CandlestickChart({
           {/* ── Price labels (static, right axis) ── */}
           {font !== null &&
             priceLabels.map((lbl) => (
-              <Text
+              <SkiaText
                 key={lbl.text}
                 x={CHART_AREA_W + 4}
                 y={lbl.y + 4}
@@ -566,7 +598,7 @@ export function CandlestickChart({
 
           {/* ── Ticker label ── */}
           {font !== null && ticker !== '' && (
-            <Text
+            <SkiaText
               x={6}
               y={CHART_TOP + 14}
               text={ticker}
@@ -649,7 +681,22 @@ export function CandlestickChart({
             />
           )}
 
-          {/* ── Elliott Wave overlay layer ── */}
+          {/* ── Wave channel lines (E4) ── */}
+          {overlays.elliottWaveLabels && waveCounts.length > 0 && (
+            <WaveChannelLayer
+              waveCounts={waveCounts}
+              sliceOffset={waveSliceOffset}
+              translateX={translateX}
+              candleW={candleW}
+              layoutDV={layoutDV}
+              chartTop={CHART_TOP}
+              chartDrawH={CHART_DRAW_H}
+              chartAreaW={CHART_AREA_W}
+              font={font}
+            />
+          )}
+
+          {/* ── Elliott Wave overlay layer (with invalidation line E5) ── */}
           {overlays.elliottWaveLabels && waveCounts.length > 0 && (
             <WaveOverlayLayer
               waveCounts={waveCounts}
@@ -659,6 +706,8 @@ export function CandlestickChart({
               layoutDV={layoutDV}
               chartTop={CHART_TOP}
               chartDrawH={CHART_DRAW_H}
+              chartAreaW={CHART_AREA_W}
+              activeStopPrice={activeStopPrice}
               font={font}
             />
           )}
@@ -681,7 +730,7 @@ export function CandlestickChart({
             />
             {/* Price label */}
             {font !== null && (
-              <Text
+              <SkiaText
                 x={CHART_AREA_W + 4}
                 y={crosshairPriceY}
                 text={crosshairPriceText}
@@ -692,6 +741,33 @@ export function CandlestickChart({
           </Group>
         </Canvas>
       </GestureDetector>
+
+      {/* ── OHLCV HUD (React Native view overlay — not Skia) ── */}
+      {hudData !== null && (
+        <View
+          pointerEvents="none"
+          style={[styles.hud, hudData.xRight ? styles.hudLeft : styles.hudRight]}
+        >
+          <Text style={[styles.hudClose, { color: hudData.pctChange >= 0 ? CHART_COLORS.bullBody : CHART_COLORS.bearBody }]}>
+            ${hudData.close.toFixed(2)}
+          </Text>
+          <View style={styles.hudRow}>
+            <Text style={styles.hudLbl}>O </Text><Text style={styles.hudVal}>${hudData.open.toFixed(2)}</Text>
+            <Text style={styles.hudLbl}>  H </Text><Text style={styles.hudVal}>${hudData.high.toFixed(2)}</Text>
+          </View>
+          <View style={styles.hudRow}>
+            <Text style={styles.hudLbl}>L </Text><Text style={styles.hudVal}>${hudData.low.toFixed(2)}</Text>
+            <Text style={styles.hudLbl}>  C </Text><Text style={styles.hudVal}>${hudData.close.toFixed(2)}</Text>
+          </View>
+          <View style={styles.hudRow}>
+            <Text style={styles.hudLbl}>Vol </Text>
+            <Text style={styles.hudVal}>{formatVolume(hudData.volume)}</Text>
+            <Text style={[styles.hudPct, { color: hudData.pctChange >= 0 ? CHART_COLORS.bullBody : CHART_COLORS.bearBody }]}>
+              {'  '}{hudData.pctChange >= 0 ? '+' : ''}{hudData.pctChange.toFixed(2)}%
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -702,5 +778,46 @@ const styles = StyleSheet.create({
   },
   canvas: {
     backgroundColor: CHART_COLORS.background,
+  },
+
+  // OHLCV HUD
+  hud: {
+    position:        'absolute',
+    top:             28,   // CHART_LAYOUT.paddingTop + 16
+    backgroundColor: 'rgba(14, 17, 23, 0.90)',
+    borderRadius:    6,
+    borderWidth:     1,
+    borderColor:     CHART_COLORS.gridLine,
+    padding:         7,
+    minWidth:        112,
+  },
+  hudLeft: {
+    left: 6,
+  },
+  hudRight: {
+    right: 66,   // CHART_LAYOUT.priceAxisWidth + 4
+  },
+  hudClose: {
+    fontSize:    15,
+    fontWeight:  '700',
+    marginBottom: 3,
+  },
+  hudRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    marginTop:     1,
+  },
+  hudLbl: {
+    color:      CHART_COLORS.textMuted,
+    fontSize:   10,
+    fontWeight: '600',
+  },
+  hudVal: {
+    color:    CHART_COLORS.textPrimary,
+    fontSize: 10,
+  },
+  hudPct: {
+    fontSize:  10,
+    fontWeight: '600',
   },
 });

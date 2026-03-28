@@ -18,13 +18,15 @@
  */
 
 import React from 'react';
-import { Path, Text, Group, Skia, type SkFont, type SkPath } from '@shopify/react-native-skia';
+import { Path, Text, DashPathEffect, Group, Skia, type SkFont, type SkPath } from '@shopify/react-native-skia';
 import { useSharedValue, useDerivedValue } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { useEffect } from 'react';
 import type { WaveCount } from '@elliott-wave-pro/wave-engine';
 import { CHART_COLORS } from './chartTypes';
 import type { ChartLayoutParams } from './chartTypes';
+
+const INVALIDATION_COLOR = 'rgba(239,83,80,0.80)'; // bright red
 
 // ── Internal serialised form (safe to store in a SharedValue) ─────────────────
 
@@ -224,15 +226,18 @@ function WaveCountOverlay({
 // ── Public component ──────────────────────────────────────────────────────────
 
 export interface WaveOverlayLayerProps {
-  waveCounts:  readonly WaveCount[];
-  sliceOffset: number;
-  translateX:  SharedValue<number>;
-  candleW:     SharedValue<number>;
-  layoutDV:    SharedValue<ChartLayoutParams>;
-  chartTop:    number;
-  chartDrawH:  number;
+  waveCounts:      readonly WaveCount[];
+  sliceOffset:     number;
+  translateX:      SharedValue<number>;
+  candleW:         SharedValue<number>;
+  layoutDV:        SharedValue<ChartLayoutParams>;
+  chartTop:        number;
+  chartDrawH:      number;
+  chartAreaW:      number;
+  /** Price at which the active scenario is invalidated. 0 = hidden. */
+  activeStopPrice: number;
   /** JetBrains Mono Bold or system monospace fallback. */
-  font:        SkFont | null;
+  font:            SkFont | null;
 }
 
 export function WaveOverlayLayer({
@@ -243,15 +248,53 @@ export function WaveOverlayLayer({
   layoutDV,
   chartTop,
   chartDrawH,
+  chartAreaW,
+  activeStopPrice,
   font,
 }: WaveOverlayLayerProps) {
   const primarySV   = useSharedValue<SerializedCount>(NULL_COUNT);
   const secondarySV = useSharedValue<SerializedCount>(NULL_COUNT);
+  const stopPriceSV = useSharedValue<number>(0);
 
   useEffect(() => {
     primarySV.value   = waveCounts[0] ? serializeCount(waveCounts[0], sliceOffset) : NULL_COUNT;
     secondarySV.value = waveCounts[1] ? serializeCount(waveCounts[1], sliceOffset) : NULL_COUNT;
   }, [waveCounts, sliceOffset, primarySV, secondarySV]);
+
+  useEffect(() => {
+    stopPriceSV.value = activeStopPrice;
+  }, [activeStopPrice, stopPriceSV]);
+
+  // ── Invalidation line ───────────────────────────────────────────────────────
+  const invalidationPath = useDerivedValue((): SkPath => {
+    'worklet';
+    const stopP = stopPriceSV.value;
+    const path = Skia.Path.Make();
+    if (stopP <= 0) return path;
+    const { minP, maxP } = layoutDV.value;
+    const range = maxP - minP;
+    if (range < 1e-9) return path;
+    const y = chartTop + ((maxP - stopP) / range) * chartDrawH;
+    if (y < chartTop || y > chartTop + chartDrawH) return path;
+    path.moveTo(0, y);
+    path.lineTo(chartAreaW, y);
+    return path;
+  });
+
+  const invalidationLabelY = useDerivedValue((): number => {
+    'worklet';
+    const stopP = stopPriceSV.value;
+    if (stopP <= 0) return -200;
+    const { minP, maxP } = layoutDV.value;
+    const range = maxP - minP;
+    if (range < 1e-9) return -200;
+    const y = chartTop + ((maxP - stopP) / range) * chartDrawH;
+    return y < chartTop || y > chartTop + chartDrawH ? -200 : y - 3;
+  });
+
+  const invalidationLabel = activeStopPrice > 0
+    ? `Inv: $${activeStopPrice.toFixed(2)}`
+    : '';
 
   return (
     <>
@@ -277,6 +320,28 @@ export function WaveOverlayLayer({
         opacity={1.0}
         font={font}
       />
+      {/* Invalidation / stop price line */}
+      {activeStopPrice > 0 && (
+        <Group>
+          <Path
+            path={invalidationPath}
+            color={INVALIDATION_COLOR}
+            style="stroke"
+            strokeWidth={1.5}
+          >
+            <DashPathEffect intervals={[8, 5]} phase={0} />
+          </Path>
+          {font !== null && invalidationLabel !== '' && (
+            <Text
+              x={4}
+              y={invalidationLabelY}
+              text={invalidationLabel}
+              font={font}
+              color={INVALIDATION_COLOR}
+            />
+          )}
+        </Group>
+      )}
     </>
   );
 }

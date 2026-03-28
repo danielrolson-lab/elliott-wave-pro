@@ -153,10 +153,16 @@ export function useWaveEngine(
 
     // Step 1: detect pivots
     const pivots = detectPivots(slice, 0.5, timeframe);
+    if (__DEV__) {
+      console.log(`[useWaveEngine] ${ticker}_${timeframe}: slice=${slice.length} bars → ${pivots.length} pivots`);
+    }
     if (pivots.length < 6) return;
 
     // Step 2: generate all valid wave counts (impulse + diagonal)
     const counts = generateWaveCounts(pivots, ticker, timeframe);
+    if (__DEV__) {
+      console.log(`[useWaveEngine] ${ticker}_${timeframe}: ${counts.length} raw counts generated`);
+    }
     if (counts.length === 0) return;
 
     // Step 3: compute RSI + MACD for scoring
@@ -187,6 +193,9 @@ export function useWaveEngine(
       mtfScores,
     });
     const top4 = scored.slice(0, 4);
+    if (__DEV__) {
+      console.log(`[useWaveEngine] ${ticker}_${timeframe}: top-${top4.length} counts, posteriors=[${top4.map((c) => `${c.currentWave.label}@${(c.posterior.posterior * 100).toFixed(0)}%`).join(', ')}]`);
+    }
 
     const next: UseWaveEngineResult = { waveCounts: top4, sliceOffset };
     setResult(next);

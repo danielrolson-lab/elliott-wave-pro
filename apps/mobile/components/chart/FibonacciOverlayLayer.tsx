@@ -34,10 +34,10 @@ import type { ChartLayoutParams } from './chartTypes';
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
-const RETRACE_COLOR   = 'rgba(144,164,174,0.6)';  // cool grey
-const EXTENSION_COLOR = 'rgba(255,214,0,0.6)';    // gold
-const LABEL_RETRACE   = 'rgba(144,164,174,0.9)';
-const LABEL_EXTENSION = 'rgba(255,214,0,0.9)';
+const RETRACE_COLOR   = 'rgba(251,146,60,0.65)';  // amber/orange — retracements
+const EXTENSION_COLOR = 'rgba(34,211,238,0.65)';  // cyan/teal   — extensions
+const LABEL_RETRACE   = 'rgba(251,146,60,0.95)';
+const LABEL_EXTENSION = 'rgba(34,211,238,0.95)';
 
 // ── Worklet helpers ───────────────────────────────────────────────────────────
 

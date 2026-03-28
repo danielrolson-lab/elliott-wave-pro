@@ -7,7 +7,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSharedValue } from 'react-native-reanimated';
 import { CandlestickChart }  from '../components/chart/CandlestickChart';
@@ -24,6 +24,8 @@ import { useCVD }               from '../hooks/useCVD';
 import { useScenarioCommentary } from '../hooks/useScenarioCommentary';
 import { useMarketDataStore }    from '../stores/marketData';
 import { useGEXStore }         from '../stores/gex';
+import { useWaveCountStore }   from '../stores/waveCount';
+import { useWaveAlerts }       from '../hooks/useWaveAlerts';
 import { ScenarioPanel }       from '../components/scenarios/ScenarioPanel';
 import { DepthLadder }         from '../components/l2/DepthLadder';
 import { TimeAndSales }        from '../components/l2/TimeAndSales';
@@ -70,6 +72,17 @@ export function ChartScreen() {
   useSentiment(ACTIVE_TICKER);
   useEarnings(ACTIVE_TICKER);
   const gexLevels = useGEXStore((s) => s.levels[ACTIVE_TICKER] ?? null);
+
+  // Active stop price: use pinned count if set, otherwise primary count
+  const pinnedCountId = useWaveCountStore((s) => s.pinnedCountId[`${ACTIVE_TICKER}_${timeframe}`]);
+  const activeStopPrice = useMemo(() => {
+    if (!waveCounts.length) return 0;
+    const pinned = pinnedCountId ? waveCounts.find((c) => c.id === pinnedCountId) : null;
+    return (pinned ?? waveCounts[0]).stopPrice;
+  }, [waveCounts, pinnedCountId]);
+
+  // Wave completion alerts (E9)
+  useWaveAlerts(ACTIVE_TICKER, timeframe, candles, waveCounts);
 
   const overlays = useMemo(() => ({
     ema9: false, ema21: true, ema50: true, ema200: false,
@@ -128,6 +141,7 @@ export function ChartScreen() {
                   waveCounts={waveCounts}
                   waveSliceOffset={sliceOffset}
                   gexLevels={gexLevels}
+                  activeStopPrice={activeStopPrice}
                   externalTranslateX={translateX}
                   externalCandleW={candleW}
                 />
@@ -174,9 +188,11 @@ export function ChartScreen() {
               candleW={candleW}
               font={null}
             />
-            <EarningsCountdownBadge ticker={ACTIVE_TICKER} onPress={() => setShowPlaybook(true)} />
-            <ScenarioPanel ticker={ACTIVE_TICKER} timeframe={timeframe} />
-            <SentimentOverlay ticker={ACTIVE_TICKER} timeframe={timeframe} />
+            <ScrollView style={styles.bottomScroll} showsVerticalScrollIndicator={false}>
+              <EarningsCountdownBadge ticker={ACTIVE_TICKER} onPress={() => setShowPlaybook(true)} />
+              <ScenarioPanel ticker={ACTIVE_TICKER} timeframe={timeframe} />
+              <SentimentOverlay ticker={ACTIVE_TICKER} timeframe={timeframe} />
+            </ScrollView>
             <EarningsPlaybook
               ticker={ACTIVE_TICKER}
               timeframe={timeframe}
@@ -294,5 +310,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     paddingHorizontal: 24,
+  },
+  bottomScroll: {
+    maxHeight: 280,
   },
 });
