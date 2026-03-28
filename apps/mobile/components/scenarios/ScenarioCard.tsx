@@ -24,7 +24,7 @@ import Animated, {
   withSpring,
   useAnimatedStyle,
 } from 'react-native-reanimated';
-import type { WaveCount, FibLevel, WaveDegree } from '@elliott-wave-pro/wave-engine';
+import type { WaveCount, FibLevel, WaveDegree, PatternCandidate, Recommendation, CountStage } from '@elliott-wave-pro/wave-engine';
 import { DEGREE_COLORS, computeFibLevels } from '@elliott-wave-pro/wave-engine';
 import { DARK } from '../../theme/colors';
 import { RegimeBadge } from '../common/RegimeBadge';
@@ -203,6 +203,30 @@ function computeConfidenceScore(count: WaveCount): ConfidenceResult {
   return { score, total: 8, detail };
 }
 
+// ── V3: recommendation badge ──────────────────────────────────────────────────
+
+function v3RecommendationBadge(rec: Recommendation): { label: string; color: string } | null {
+  switch (rec) {
+    case 'high_confidence':      return { label: 'HIGH CONF', color: '#22c55e' };
+    case 'tradable_but_caution': return { label: 'CAUTION',   color: '#f59e0b' };
+    case 'low_confidence':       return { label: 'LOW CONF',  color: '#f97316' };
+    case 'ambiguous':            return { label: 'AMBIGUOUS', color: '#6b7280' };
+    default:                     return null;
+  }
+}
+
+function v3StageLabel(stage: CountStage): string {
+  const map: Record<CountStage, string> = {
+    complete:    'Complete',
+    forming_w3:  'Forming W3',
+    forming_w4:  'Forming W4',
+    forming_w5:  'Forming W5',
+    forming_b:   'Forming B',
+    forming_c:   'Forming C',
+  };
+  return map[stage] ?? stage;
+}
+
 // ── Verdict + verdict color ───────────────────────────────────────────────────
 
 interface VerdictSpec { label: string; color: string }
@@ -236,8 +260,11 @@ function ProbabilityBar({ probability, color }: { probability: number; color: st
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+// WaveCount extended with optional v3 raw candidate (set by useWaveEngine v3)
+type WaveCountWithV3 = WaveCount & { _v3?: PatternCandidate };
+
 interface ScenarioCardProps {
-  count:        WaveCount;
+  count:        WaveCountWithV3;
   rank:         number;
   isExpanded:   boolean;
   currentPrice: number;
@@ -252,6 +279,12 @@ export function ScenarioCard({
   onPress,
 }: ScenarioCardProps) {
   const [showConfDetail, setShowConfDetail] = useState(false);
+
+  // ── V3 badge data ────────────────────────────────────────────────────────────
+  const v3 = count._v3;
+  const v3RecBadge  = useMemo(() => v3 ? v3RecommendationBadge(v3.recommendation) : null, [v3]);
+  const v3StageText = useMemo(() => v3 ? v3StageLabel(v3.stage) : null, [v3]);
+  const v3TopNotes  = useMemo(() => v3 ? v3.score.notes.slice(0, 2) : [], [v3]);
 
   const probability  = count.posterior.posterior;
   const verdict      = getVerdict(count);
@@ -355,6 +388,29 @@ export function ScenarioCard({
         <View style={styles.confDetail}>
           {confidence.detail.map((line, i) => (
             <Text key={i} style={styles.confDetailLine}>{line}</Text>
+          ))}
+        </View>
+      )}
+
+      {/* ── V3: recommendation badge + stage label ── */}
+      {v3 !== undefined && (v3RecBadge !== null || v3StageText !== null) && (
+        <View style={[styles.row, { flexWrap: 'wrap', gap: 4 }]}>
+          {v3RecBadge !== null && (
+            <View style={[styles.v3RecBadge, { borderColor: v3RecBadge.color }]}>
+              <Text style={[styles.v3RecBadgeText, { color: v3RecBadge.color }]}>{v3RecBadge.label}</Text>
+            </View>
+          )}
+          {v3StageText !== null && (
+            <Text style={styles.v3StageText}>{v3StageText}</Text>
+          )}
+        </View>
+      )}
+
+      {/* ── V3: top score notes ── */}
+      {v3 !== undefined && v3TopNotes.length > 0 && isExpanded && (
+        <View style={styles.v3Notes}>
+          {v3TopNotes.map((note, i) => (
+            <Text key={i} style={styles.v3NoteText} numberOfLines={1}>{note}</Text>
           ))}
         </View>
       )}
@@ -545,6 +601,32 @@ const styles = StyleSheet.create({
     fontSize: 9,
     flex:     1,
     fontStyle: 'italic',
+  },
+
+  // V3 recommendation badge
+  v3RecBadge: {
+    borderWidth:       1,
+    borderRadius:      4,
+    paddingHorizontal: 4,
+    paddingVertical:   1,
+  },
+  v3RecBadgeText: {
+    fontSize:     8,
+    fontWeight:   '700',
+    letterSpacing: 0.3,
+  },
+  v3StageText: {
+    color:    DARK.textMuted,
+    fontSize: 9,
+    fontStyle: 'italic',
+  },
+  v3Notes: {
+    gap: 1,
+    paddingTop: 1,
+  },
+  v3NoteText: {
+    color:    DARK.textMuted,
+    fontSize: 8,
   },
 
   // RSI divergence badge (E6)

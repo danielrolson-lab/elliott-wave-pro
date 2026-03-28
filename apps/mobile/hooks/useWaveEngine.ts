@@ -1,131 +1,228 @@
 /**
- * useWaveEngine.ts  (v2 — incremental Bayesian + MTF alignment)
+ * useWaveEngine.ts  (v3 — multi-hypothesis Bayesian + hysteresis)
  *
  * On each new candle close, slices the last 200 bars, runs the full
- * wave-engine pipeline, and writes the top-2 scored WaveCounts to the Zustand
- * waveCount store.
+ * wave-engine v3 pipeline, and writes the top-4 scored WaveCounts to the
+ * Zustand waveCount store.
  *
- * v2 upgrades:
- *   - Passes existing posteriors from the store so the probability engine can
- *     apply incremental Bayesian updates (prior = decayed previous posterior).
- *   - Computes multi-timeframe alignment scores by checking whether the top
- *     wave count on each higher timeframe agrees in direction with each
- *     candidate count on the current timeframe.
- *
- * Returns the counts and the slice offset so the chart overlay can convert
- * pivot bar indices to absolute indices in the full candle array.
+ * v3 upgrades:
+ *   - Uses generateWaveCountsV3 with multi-hypothesis scoring
+ *   - Engine state persisted in useRef for hysteresis across renders
+ *   - PatternCandidate mapped to WaveCount for backward-compatible store writes
+ *   - _v3 field carries raw v3 candidate for UI enhancements (ScenarioCard)
  */
 
 import { useEffect, useRef, useState } from 'react';
 import {
   detectPivots,
-  generateWaveCounts,
-  scoreWaveCounts,
+  generateWaveCountsV3,
 } from '@elliott-wave-pro/wave-engine';
-import type { OHLCV, WaveCount } from '@elliott-wave-pro/wave-engine';
+import type {
+  OHLCV,
+  WaveCount,
+  WaveNode,
+  WaveDegree,
+  WaveLabel,
+  WaveStructure,
+  PatternCandidate,
+  V3EngineState,
+  PatternType,
+} from '@elliott-wave-pro/wave-engine';
 import { useWaveCountStore } from '../stores/waveCount';
 
 const MAX_CANDLES = 200;
 const EMPTY: WaveCount[] = [];
 
 // Shorter timeframes need a smaller minimum-swing floor to detect enough pivots.
-// The default 0.05% floor is too large for 1m/15m on high-priced stocks.
 const MIN_SWING_PCT: Readonly<Record<string, number>> = {
-  '1m':  0.00015,   // 0.015% — detect finer swings on 1-min bars
-  '15m': 0.00025,   // 0.025% — slightly tighter than default for 15-min
+  '1m':  0.00015,
+  '15m': 0.00025,
 };
 
-// Allow fewer pivots on the shortest timeframe (3.3h window = less structure)
 function minPivots(timeframe: string): number {
   return timeframe === '1m' ? 4 : 6;
 }
 
-// ── RSI (14-period, Wilder) ───────────────────────────────────────────────────
-
-function computeRSI14(closes: readonly number[]): number {
-  const n = closes.length;
-  if (n < 15) return 50;
-  let gains = 0;
-  let losses = 0;
-  for (let i = n - 14; i < n; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d > 0) gains += d;
-    else losses -= d;
-  }
-  if (losses === 0) return 100;
-  return 100 - 100 / (1 + gains / losses);
-}
-
-// ── MACD histogram (12/26 EMA diff) ──────────────────────────────────────────
-
-function lastEMA(closes: readonly number[], period: number): number {
-  if (closes.length === 0) return 0;
-  const k = 2 / (period + 1);
-  let ema = closes[0];
-  for (let i = 1; i < closes.length; i++) {
-    ema = closes[i] * k + ema * (1 - k);
-  }
-  return ema;
-}
-
-function computeMACDHistogram(closes: readonly number[]): number {
-  if (closes.length < 26) return 0;
-  return lastEMA(closes, 12) - lastEMA(closes, 26);
-}
-
-// ── MTF alignment ─────────────────────────────────────────────────────────────
+// ── Degree mapping ─────────────────────────────────────────────────────────────
 
 /**
- * Maps each timeframe to the higher timeframes used for MTF alignment scoring.
- * Per spec: +20 probability bonus when TF and a higher TF agree on direction.
+ * Maps v3 Degree strings to WaveDegree. v3 uses "subminuette" which the
+ * existing type set doesn't have, so we fall back to "minuette".
  */
-const HIGHER_TFS: Readonly<Record<string, readonly string[]>> = {
-  '1m':  ['5m', '15m'],
-  '5m':  ['1h', '4h'],
-  '15m': ['1h', '4h'],
-  '30m': ['1h', '4h'],
-  '1h':  ['4h', '1D'],
-  '4h':  ['1D'],
-  '1D':  ['1W'],
-  '1W':  [],
-};
-
-function isBullishCount(count: WaveCount): boolean {
-  const w1 = count.allWaves.find((w) => w.label === '1');
-  if (!w1 || !w1.endPivot) return false;
-  return w1.startPivot.price < w1.endPivot.price;
+function mapV3Degree(degree: string): WaveDegree {
+  const map: Record<string, WaveDegree> = {
+    subminuette: 'minuette',
+    minuette:    'minuette',
+    minute:      'minute',
+    minor:       'minor',
+    intermediate: 'intermediate',
+    primary:     'primary',
+  };
+  return map[degree] ?? 'minor';
 }
 
-/**
- * Returns a score in [0, 1] for how aligned this count's direction is with
- * the top count on each higher timeframe.
- *
- * 0.9 = all higher TFs agree
- * 0.5 = no higher TF data (neutral)
- * 0.2 = all higher TFs conflict
- */
-function computeMtfScore(
+// ── Pattern type mapping ───────────────────────────────────────────────────────
+
+function mapV3PatternType(type: PatternType): WaveStructure {
+  const map: Record<PatternType, WaveStructure> = {
+    impulse:          'impulse',
+    leading_diagonal: 'leading_diagonal',
+    ending_diagonal:  'ending_diagonal',
+    zigzag:           'zigzag',
+    regular_flat:     'flat',
+    expanded_flat:    'flat',
+  };
+  return map[type] ?? 'impulse';
+}
+
+// ── Impulse wave labels ────────────────────────────────────────────────────────
+
+const IMPULSE_LABELS: WaveLabel[] = ['1', '2', '3', '4', '5'];
+const CORRECTIVE_LABELS: WaveLabel[] = ['A', 'B', 'C'];
+
+// ── Adapter: PatternCandidate → WaveCount ─────────────────────────────────────
+
+function mapV3CandidateToWaveCount(
+  candidate: PatternCandidate,
+  sliceOffset: number,
+  candles: readonly OHLCV[],
   ticker: string,
   timeframe: string,
-  isBullish: boolean,
-  allCounts: Readonly<Record<string, WaveCount[]>>,
-): number {
-  const higherTfs = HIGHER_TFS[timeframe] ?? [];
-  if (higherTfs.length === 0) return 0.5;
+): WaveCount {
+  const degree    = mapV3Degree(candidate.degree);
+  const structure = mapV3PatternType(candidate.type);
+  const pivots    = candidate.pivots;
 
-  let agreeing = 0;
-  let conflicting = 0;
+  const isCorrective =
+    candidate.type === 'zigzag' ||
+    candidate.type === 'regular_flat' ||
+    candidate.type === 'expanded_flat';
 
-  for (const htf of higherTfs) {
-    const htfTop = allCounts[`${ticker}_${htf}`]?.[0];
-    if (!htfTop) continue;
-    if (isBullishCount(htfTop) === isBullish) agreeing++;
-    else conflicting++;
+  const labels = isCorrective ? CORRECTIVE_LABELS : IMPULSE_LABELS;
+
+  // Build allWaves from sequential pivot pairs
+  const allWaves: WaveNode[] = [];
+  const pairCount = Math.min(pivots.length - 1, labels.length);
+
+  for (let i = 0; i < pairCount; i++) {
+    const p0 = pivots[i];
+    const p1 = pivots[i + 1];
+
+    // Resolve bar index: use pivot.bar if available, else find nearest candle
+    const resolveBarIndex = (ts: number, bar?: number): number => {
+      if (bar !== undefined && Number.isFinite(bar)) return sliceOffset + bar;
+      // Find nearest candle by timestamp
+      let best = sliceOffset;
+      let bestDist = Infinity;
+      for (let ci = 0; ci < candles.length; ci++) {
+        const dist = Math.abs(candles[ci].timestamp - ts);
+        if (dist < bestDist) { bestDist = dist; best = ci; }
+      }
+      return best;
+    };
+
+    const startBar = resolveBarIndex(p0.ts, p0.bar);
+    const endBar   = resolveBarIndex(p1.ts, p1.bar);
+
+    const startPivot = {
+      index:     startBar,
+      timestamp: p0.ts,
+      price:     p0.price,
+      type:      (p0.isHigh ? 'HH' : 'LL') as import('@elliott-wave-pro/wave-engine').PivotType,
+      timeframe,
+    };
+    const endPivot = {
+      index:     endBar,
+      timestamp: p1.ts,
+      price:     p1.price,
+      type:      (p1.isHigh ? 'HH' : 'LL') as import('@elliott-wave-pro/wave-engine').PivotType,
+      timeframe,
+    };
+
+    allWaves.push({
+      label:      labels[i],
+      degree,
+      structure,
+      startPivot,
+      endPivot,
+      subwaves:   [],
+    });
   }
 
-  if (agreeing > 0 && conflicting === 0) return 0.9;
-  if (conflicting > 0 && agreeing === 0) return 0.2;
-  return 0.5; // mixed or no data
+  // currentWave: last fully-formed wave
+  const currentWave: WaveNode = allWaves[allWaves.length - 1] ?? {
+    label:      labels[0],
+    degree,
+    structure,
+    startPivot: {
+      index: sliceOffset, timestamp: pivots[0]?.ts ?? 0, price: pivots[0]?.price ?? 0,
+      type: 'LL', timeframe,
+    },
+    endPivot: null,
+    subwaves: [],
+  };
+
+  // Targets
+  const tz = candidate.targetZone;
+  const targets: [number, number, number] = [
+    tz?.[0] ?? 0,
+    tz?.[1] ?? 0,
+    0,
+  ];
+
+  const stopPrice = candidate.invalidation ?? 0;
+
+  // R/R ratio
+  const lastPrice = pivots[pivots.length - 1]?.price ?? 0;
+  const risk   = Math.abs(lastPrice - stopPrice);
+  const reward = Math.abs((targets[0] + targets[1]) / 2 - lastPrice);
+  const rrRatio = risk > 0 ? reward / risk : 0;
+
+  // Posterior components — map from v3 score breakdown
+  const posterior: import('@elliott-wave-pro/wave-engine').WavePosterior = {
+    countId:  candidate.id,
+    prior:    candidate.prior,
+    posterior: candidate.confidence,
+    likelihood_components: {
+      fib_confluence:    candidate.score.fibonacci / 100,
+      volume_profile:    candidate.score.volume / 100,
+      rsi_divergence:    candidate.score.momentum / 100,
+      momentum_alignment: candidate.score.momentum / 100,
+      breadth_alignment:  0.5,
+      gex_alignment:      0.5,
+      mtf_alignment:      candidate.score.htfAlignment / 100,
+      time_symmetry:      candidate.score.time / 100,
+    },
+    decay_factor:         1,
+    last_updated:         Date.now(),
+    invalidation_price:   stopPrice,
+    confidence_interval:  [
+      Math.max(0, candidate.confidence - 0.1),
+      Math.min(1, candidate.confidence + 0.1),
+    ],
+    mtf_conflict: candidate.score.htfAlignment < 40,
+  };
+
+  const waveCount: WaveCount & { _v3?: PatternCandidate } = {
+    id:           candidate.id,
+    ticker,
+    timeframe,
+    degree,
+    currentWave,
+    allWaves,
+    posterior,
+    targets,
+    stopPrice,
+    rrRatio,
+    isValid:      candidate.hardViolations.length === 0,
+    violations:   candidate.hardViolations,
+    softWarnings: candidate.score.notes.slice(0, 3),
+    createdAt:    Date.now(),
+    updatedAt:    Date.now(),
+    _v3:          candidate,
+  };
+
+  return waveCount;
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -146,10 +243,12 @@ export function useWaveEngine(
     sliceOffset: 0,
   });
   const prevLen = useRef(0);
+  const v3EngineStateRef = useRef<V3EngineState>({});
 
-  // BUG-020: reset prevLen and clear stale counts when ticker or timeframe changes
+  // Reset on ticker/timeframe change
   useEffect(() => {
     prevLen.current = 0;
+    v3EngineStateRef.current = {};
     setResult({ waveCounts: EMPTY, sliceOffset: 0 });
   }, [ticker, timeframe]);
 
@@ -157,13 +256,12 @@ export function useWaveEngine(
     if (candles.length < 20) return;
     if (candles.length === prevLen.current) return;
 
-    const candlesSinceUpdate = candles.length - prevLen.current;
     prevLen.current = candles.length;
 
     const sliceOffset = Math.max(0, candles.length - MAX_CANDLES);
     const slice = candles.slice(sliceOffset) as OHLCV[];
 
-    // Step 1: detect pivots (use tighter swing floor for short timeframes)
+    // Step 1: detect pivots using existing v1/v2 pivot detector
     const swingFloor = MIN_SWING_PCT[timeframe] ?? 0.0005;
     const pivots = detectPivots(slice, 0.5, timeframe, swingFloor);
     if (__DEV__) {
@@ -171,43 +269,57 @@ export function useWaveEngine(
     }
     if (pivots.length < minPivots(timeframe)) return;
 
-    // Step 2: generate all valid wave counts (impulse + diagonal)
-    const counts = generateWaveCounts(pivots, ticker, timeframe);
-    if (__DEV__) {
-      console.log(`[useWaveEngine] ${ticker}_${timeframe}: ${counts.length} raw counts generated`);
-    }
-    if (counts.length === 0) return;
+    // Step 2: convert v1 pivots → v3 Pivot format
+    const v3Pivots = pivots.map((p) => ({
+      ts:     p.timestamp,
+      price:  p.price,
+      isHigh: p.type === 'HH' || p.type === 'LH',
+      bar:    p.index,
+    }));
 
-    // Step 3: compute RSI + MACD for scoring
-    const closes = slice.map((c) => c.close);
-    const rsi  = computeRSI14(closes);
-    const macd = computeMACDHistogram(closes);
-
-    // Step 4: gather existing posteriors from store for incremental update
-    const storeState = useWaveCountStore.getState();
-    const storedCounts = storeState.counts[`${ticker}_${timeframe}`] ?? [];
-    const existingPosteriors: Record<string, number> = {};
-    for (const c of storedCounts) {
-      existingPosteriors[c.id] = c.posterior.posterior;
-    }
-
-    // Step 5: compute MTF alignment scores
-    const allCounts = storeState.counts;
-    const mtfScores: Record<string, number> = {};
-    for (const count of counts) {
-      const isB = isBullishCount(count);
-      mtfScores[count.id] = computeMtfScore(ticker, timeframe, isB, allCounts);
-    }
-
-    // Step 6: score with incremental Bayesian update
-    const scored = scoreWaveCounts(counts, slice, rsi, macd, {
-      existingPosteriors,
-      candlesSinceUpdate,
-      mtfScores,
+    // Step 3: run v3 engine
+    const v3Counts = generateWaveCountsV3({
+      pivots:     v3Pivots,
+      ticker,
+      timeframe,
+      assetClass: 'equity',
+      state:      v3EngineStateRef.current,
+      candles:    slice.map((c) => ({
+        ts:     c.timestamp,
+        open:   c.open,
+        high:   c.high,
+        low:    c.low,
+        close:  c.close,
+        volume: c.volume,
+      })),
     });
-    const top4 = scored.slice(0, 4);
+
     if (__DEV__) {
-      console.log(`[useWaveEngine] ${ticker}_${timeframe}: top-${top4.length} counts, posteriors=[${top4.map((c) => `${c.currentWave.label}@${(c.posterior.posterior * 100).toFixed(0)}%`).join(', ')}]`);
+      console.log(`[useWaveEngine] ${ticker}_${timeframe}: ${v3Counts.length} v3 candidates`);
+    }
+    if (v3Counts.length === 0) return;
+
+    // Step 4: update engine state for hysteresis
+    const preferred = v3Counts.find((c) => c.preferred);
+    if (preferred) {
+      v3EngineStateRef.current = {
+        preferredCandidateId: preferred.id,
+        preferredScore:       preferred.score.total,
+        lastSwitchTs:         Date.now(),
+      };
+    }
+
+    // Step 5: map v3 candidates → WaveCount[] (top 4)
+    const top4 = v3Counts.slice(0, 4).map((candidate) =>
+      mapV3CandidateToWaveCount(candidate, sliceOffset, candles, ticker, timeframe),
+    );
+
+    if (__DEV__) {
+      console.log(
+        `[useWaveEngine] ${ticker}_${timeframe}: top-${top4.length} counts, posteriors=[${top4
+          .map((c) => `${c.currentWave.label}@${(c.posterior.posterior * 100).toFixed(0)}%`)
+          .join(', ')}]`,
+      );
     }
 
     const next: UseWaveEngineResult = { waveCounts: top4, sliceOffset };

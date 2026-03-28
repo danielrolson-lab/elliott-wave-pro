@@ -57,3 +57,19 @@ export {
 } from './probability-engine';
 
 export type { ScoreOptions } from './probability-engine';
+
+// ── Elliott Wave Engine v3 ─────────────────────────────────────────────────────
+export { generateWaveCountsV3, explainCandidate } from './elliott-wave-engine-v3';
+export type {
+  PatternCandidate,
+  EngineState as V3EngineState,
+  HigherTimeframeBias,
+  PatternType,
+  CountStage,
+  Degree as V3Degree,
+  Recommendation,
+  ScoreBreakdown,
+  WaveMetrics,
+  CandleLike,
+  Pivot as V3Pivot,
+} from './elliott-wave-engine-v3';
