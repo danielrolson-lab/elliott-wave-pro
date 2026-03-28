@@ -21,7 +21,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import {
   Canvas,
   Path,
@@ -45,6 +45,7 @@ import type { OHLCV, WaveCount } from '@elliott-wave-pro/wave-engine';
 import type { OverlayConfig } from '../../stores/ui';
 import { CHART_COLORS, CHART_LAYOUT } from './chartTypes';
 import { WaveOverlayLayer }       from './WaveOverlayLayer';
+import { WaveProjectionLayer }    from './WaveProjectionLayer';
 import { FibonacciOverlayLayer }  from './FibonacciOverlayLayer';
 import { GEXOverlayLayer }        from './GEXOverlayLayer';
 import { WaveChannelLayer }       from './WaveChannelLayer';
@@ -263,6 +264,9 @@ export function CandlestickChart({
   // useFont is the standard Skia/Expo pattern — loads a bundled TTF via Metro
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const font: SkFont | null = useFont(require('../../assets/fonts/Roboto-Regular.ttf'), 10);
+
+  // ── Alt-count toggle state ────────────────────────────────────────────────
+  const [showAlt, setShowAlt] = useState(false);
 
   // ── Crosshair HUD state (JS thread) ──────────────────────────────────────
   const [hudData, setHudData] = useState<HudData | null>(null);
@@ -693,7 +697,22 @@ export function CandlestickChart({
             />
           )}
 
-          {/* ── Elliott Wave overlay layer (with invalidation line E5) ── */}
+          {/* ── Wave projections layer (T1/T2/T3 zones + projected path) ── */}
+          {overlays.elliottWaveLabels && waveCounts.length > 0 && (
+            <WaveProjectionLayer
+              waveCounts={waveCounts}
+              candles={candles}
+              translateX={translateX}
+              candleW={candleW}
+              layoutDV={layoutDV}
+              chartTop={CHART_TOP}
+              chartDrawH={CHART_DRAW_H}
+              chartAreaW={CHART_AREA_W}
+              font={font}
+            />
+          )}
+
+          {/* ── Elliott Wave overlay layer (per-wave colors, circles, degree notation) ── */}
           {overlays.elliottWaveLabels && waveCounts.length > 0 && (
             <WaveOverlayLayer
               waveCounts={waveCounts}
@@ -705,6 +724,7 @@ export function CandlestickChart({
               chartDrawH={CHART_DRAW_H}
               chartAreaW={CHART_AREA_W}
               activeStopPrice={activeStopPrice}
+              showAlt={showAlt}
               font={font}
             />
           )}
@@ -738,6 +758,42 @@ export function CandlestickChart({
           </Group>
         </Canvas>
       </GestureDetector>
+
+      {/* ── Confidence badge (Part 5) — top-left overlay ── */}
+      {waveCounts.length > 0 && (() => {
+        const primary  = waveCounts[0];
+        const alt      = waveCounts[1];
+        const pProb    = Math.round((primary.posterior?.posterior ?? 0) * 100);
+        const aProb    = alt ? Math.round((alt.posterior?.posterior ?? 0) * 100) : 0;
+        const pLabel   = primary.currentWave?.label ?? '?';
+        const aLabel   = alt?.currentWave?.label ?? '?';
+        const pDegree  = primary.currentWave?.degree ?? '';
+        return (
+          <View pointerEvents="none" style={styles.confidenceBadge}>
+            <Text style={styles.confPrimary}>
+              {`Primary: Wave ${pLabel}${pDegree ? ` (${pDegree})` : ''} · ${pProb}%`}
+            </Text>
+            {showAlt && alt && aProb > 0 && (
+              <Text style={styles.confAlt}>
+                {`Alt: Wave ${aLabel} · ${aProb}%`}
+              </Text>
+            )}
+          </View>
+        );
+      })()}
+
+      {/* ── Show Alt toggle button — top-right overlay ── */}
+      {waveCounts.length > 1 && (
+        <Pressable
+          style={[styles.altToggle, showAlt && styles.altToggleActive]}
+          onPress={() => setShowAlt((v) => !v)}
+          hitSlop={8}
+        >
+          <Text style={[styles.altToggleText, showAlt && styles.altToggleTextActive]}>
+            {showAlt ? 'Hide Alt' : 'Show Alt'}
+          </Text>
+        </Pressable>
+      )}
 
       {/* ── OHLCV HUD (React Native view overlay — not Skia) ── */}
       {hudData !== null && (
@@ -775,6 +831,54 @@ const styles = StyleSheet.create({
   },
   canvas: {
     backgroundColor: CHART_COLORS.background,
+  },
+
+  // Confidence badge (Part 5)
+  confidenceBadge: {
+    position:        'absolute',
+    top:             14,
+    left:            6,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius:    4,
+    borderWidth:     1,
+    borderColor:     '#1E2530',
+    paddingHorizontal: 6,
+    paddingVertical:   3,
+  },
+  confPrimary: {
+    color:    '#C9D1D9',
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  confAlt: {
+    color:    '#8888a0',
+    fontSize: 9,
+    marginTop: 1,
+  },
+
+  // Show Alt toggle button
+  altToggle: {
+    position:        'absolute',
+    top:             14,
+    right:           68,   // clear of the price axis
+    backgroundColor: 'rgba(30,37,48,0.90)',
+    borderRadius:    4,
+    borderWidth:     1,
+    borderColor:     '#30363D',
+    paddingHorizontal: 7,
+    paddingVertical:   3,
+  },
+  altToggleActive: {
+    backgroundColor: 'rgba(29,78,216,0.80)',
+    borderColor:     '#3b82f6',
+  },
+  altToggleText: {
+    color:    '#8B949E',
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  altToggleTextActive: {
+    color: '#FFFFFF',
   },
 
   // OHLCV HUD

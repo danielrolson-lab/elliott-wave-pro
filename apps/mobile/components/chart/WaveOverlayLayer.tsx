@@ -1,120 +1,122 @@
 /**
- * WaveOverlayLayer.tsx
+ * WaveOverlayLayer.tsx  (v2 — full wave count visualization)
  *
- * Renders Elliott Wave count overlays inside the Skia Canvas.
+ * Part 1 — Primary wave count on chart:
+ *   • Per-wave colored line segments
+ *       Impulse  (1, 3, 5, B) → green  (#26A69A)
+ *       Corrective (2, 4)     → amber  (#FF9800)
+ *       Bearish (A, C)        → red    (#EF5350)
+ *   • 6 px-diameter circle markers at each pivot (stroked ring)
+ *   • Degree-specific label notation based on WaveCount.timeframe:
+ *       1m / 5m  → (i)(ii)(iii)(iv)(v)
+ *       15m/30m  → i ii iii iv v
+ *       1h / 4h  → [1][2][3][4][5]
+ *       1D       → ①②③④⑤
+ *       1W       → (I)(II)(III)(IV)(V)
+ *       default  → 1 2 3 4 5
+ *   • Labels 16 px above high pivots, 18 px below low pivots (≥8 px clearance)
  *
- * For each WaveCount (primary + optional secondary):
- *   - Polyline connecting P0→P1→P2→P3→P4→P5
- *   - Wave labels (1/2/3/4/5 or A/B/C) at each wave endpoint
- *   - Bull counts → green (#26A69A); bear counts → red (#EF5350)
- *   - Secondary count rendered at 35% opacity
+ * Part 2 — Alternate wave count:
+ *   • Gray (#8888a0) at 40 % opacity
+ *   • Labels prefixed with "alt-"
+ *   • Only rendered when `showAlt` prop is true AND
+ *     (primaryProb − altProb) ≤ 0.30
  *
- * Font: JetBrains Mono Bold is the target typeface. Load it in the host
- * component via expo-font or Skia.Typeface.  Until the asset is bundled,
- * the system monospace font is used as a drop-in replacement.
- *
- * All positions recalculate on the UI thread when translateX / candleW
- * change (pan / pinch), so the overlay tracks candles without janking.
+ * Invalidation / stop-price line unchanged from v1.
  */
 
 import React from 'react';
-import { Path, Text, DashPathEffect, Group, Skia, type SkFont, type SkPath } from '@shopify/react-native-skia';
+import {
+  Path,
+  Text,
+  DashPathEffect,
+  Group,
+  Skia,
+  type SkFont,
+  type SkPath,
+} from '@shopify/react-native-skia';
 import { useSharedValue, useDerivedValue } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { useEffect } from 'react';
 import type { WaveCount } from '@elliott-wave-pro/wave-engine';
-import { CHART_COLORS } from './chartTypes';
 import type { ChartLayoutParams } from './chartTypes';
 
-const INVALIDATION_COLOR = 'rgba(239,83,80,0.80)'; // bright red
+// ── Colors ────────────────────────────────────────────────────────────────────
 
-// ── Internal serialised form (safe to store in a SharedValue) ─────────────────
+const WAVE_IMPULSE_COLOR    = '#26A69A';   // green
+const WAVE_CORRECTIVE_COLOR = '#FF9800';   // amber
+const WAVE_BEARISH_COLOR    = '#EF5350';   // red
+const WAVE_ALT_COLOR        = '#8888a0';   // muted gray/purple for alt count
+const INVALIDATION_COLOR    = 'rgba(239,83,80,0.80)';
+
+// ── Degree notation ───────────────────────────────────────────────────────────
+
+function applyDegreeNotation(label: string, timeframe: string): string {
+  const lower: Record<string, string> = {
+    '1': 'i', '2': 'ii', '3': 'iii', '4': 'iv', '5': 'v',
+    'A': 'a', 'B': 'b',  'C': 'c',
+  };
+  const roman: Record<string, string> = {
+    '1': 'I', '2': 'II', '3': 'III', '4': 'IV', '5': 'V',
+  };
+  const circled: Record<string, string> = {
+    '1': '\u2460', '2': '\u2461', '3': '\u2462', '4': '\u2463', '5': '\u2464',
+  };
+  switch (timeframe) {
+    case '1m': case '5m':
+      return `(${lower[label] ?? label.toLowerCase()})`;
+    case '15m': case '30m':
+      return lower[label] ?? label.toLowerCase();
+    case '1h': case '4h':
+      return `[${label}]`;
+    case '1D':
+      return circled[label] ?? label;
+    case '1W':
+      return `(${roman[label] ?? label})`;
+    default:
+      return label;
+  }
+}
+
+// ── Wave color type ───────────────────────────────────────────────────────────
+// 0 = impulse/green  1 = corrective/amber  2 = bearish/red
+
+function getWaveColorType(label: string): number {
+  if (label === '1' || label === '3' || label === '5' || label === 'B') return 0;
+  if (label === '2' || label === '4') return 1;
+  if (label === 'A' || label === 'C') return 2;
+  return 0;
+}
+
+// ── Serialised form ───────────────────────────────────────────────────────────
 
 interface PivotData {
-  barIndex: number;  // absolute index in the full candles array
+  barIndex: number;
   price:    number;
 }
 
 interface SerializedCount {
-  isBullish: boolean;
-  pivots:    PivotData[];   // 6 entries: P0..P5
-  labels:    string[];      // 5 entries: label at end of each wave
+  isBullish:  boolean;
+  pivots:     PivotData[];
+  labels:     string[];       // degree-notated, "alt-" prefix if alt
+  colorTypes: number[];       // 0/1/2 per wave segment
+  isAlt:      boolean;
 }
 
 const NULL_COUNT: SerializedCount = {
-  isBullish: true,
-  pivots:    [],
-  labels:    [],
+  isBullish:  true,
+  pivots:     [],
+  labels:     [],
+  colorTypes: [],
+  isAlt:      false,
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function pToY(price: number, minP: number, maxP: number, top: number, h: number): number {
-  'worklet';
-  const range = maxP - minP;
-  if (range < 1e-9) return top + h * 0.5;
-  return top + ((maxP - price) / range) * h;
-}
-
-/** Convert a serialized wave count into a Skia polyline Path. */
-function buildWavePolyline(
-  count: SerializedCount,
-  tx: number,
-  cw: number,
-  layout: ChartLayoutParams,
-  chartTop: number,
-  chartH: number,
-): SkPath {
-  'worklet';
-  const p = Skia.Path.Make();
-  const { minP, maxP } = layout;
-  const pivots = count.pivots;
-  if (pivots.length < 2) return p;
-
-  const half = cw * 0.5;
-  let first = true;
-  for (let i = 0; i < pivots.length; i++) {
-    const x = tx + pivots[i].barIndex * cw + half;
-    const y = pToY(pivots[i].price, minP, maxP, chartTop, chartH);
-    if (first) {
-      p.moveTo(x, y);
-      first = false;
-    } else {
-      p.lineTo(x, y);
-    }
-  }
-  return p;
-}
-
-/** Pixel position for the i-th wave label (placed at pivots[i+1], the wave endpoint). */
-function labelPos(
-  count: SerializedCount,
-  pivotIdx: number,         // 1..5
-  tx: number,
-  cw: number,
-  layout: ChartLayoutParams,
-  chartTop: number,
-  chartH: number,
-): { x: number; y: number } {
-  'worklet';
-  const pivot = count.pivots[pivotIdx];
-  if (!pivot) return { x: -200, y: -200 };
-  const { minP, maxP } = layout;
-  const x = tx + pivot.barIndex * cw + cw * 0.5 - 5;
-  const y = pToY(pivot.price, minP, maxP, chartTop, chartH);
-
-  // For bull: odd-index pivots are highs → label above; even → below
-  // For bear: even-index pivots are highs → label above; odd → below
-  const isHigh = count.isBullish ? pivotIdx % 2 === 1 : pivotIdx % 2 === 0;
-  const offsetY = isHigh ? -14 : 16;
-  return { x, y: y + offsetY };
-}
-
-// ── Serialiser ────────────────────────────────────────────────────────────────
-
-function serializeCount(count: WaveCount, sliceOffset: number): SerializedCount {
+function serializeCount(
+  count:       WaveCount,
+  sliceOffset: number,
+  isAlt:       boolean,
+): SerializedCount {
   const waves = count.allWaves;
-  // Support partial in-progress counts (min 2 waves = 3 pivots)
   if (!waves || waves.length < 2) return NULL_COUNT;
 
   const w1 = waves[0];
@@ -132,14 +134,101 @@ function serializeCount(count: WaveCount, sliceOffset: number): SerializedCount 
   }
   if (pivots.length < 2) return NULL_COUNT;
 
-  return {
-    isBullish: w1.startPivot.price < w1.endPivot.price,
-    pivots,
-    labels: waves.map((w) => w.label as string),
-  };
+  const tf         = count.timeframe;
+  const isBullish  = w1.startPivot.price < w1.endPivot.price;
+  const colorTypes = waves.map((w) => getWaveColorType(w.label as string));
+  const labels     = waves.map((w) => {
+    const notated = applyDegreeNotation(w.label as string, tf);
+    return isAlt ? `alt-${notated}` : notated;
+  });
+
+  return { isBullish, pivots, labels, colorTypes, isAlt };
 }
 
-// ── Per-count sub-component ───────────────────────────────────────────────────
+// ── Worklet helpers ───────────────────────────────────────────────────────────
+
+function pToY(price: number, minP: number, maxP: number, top: number, h: number): number {
+  'worklet';
+  const range = maxP - minP;
+  if (range < 1e-9) return top + h * 0.5;
+  return top + ((maxP - price) / range) * h;
+}
+
+// Segment path for one color type (0/1/2)
+function buildSegmentPath(
+  count:      SerializedCount,
+  colorType:  number,
+  tx:         number,
+  cw:         number,
+  layout:     ChartLayoutParams,
+  chartTop:   number,
+  chartH:     number,
+): SkPath {
+  'worklet';
+  const path   = Skia.Path.Make();
+  const { minP, maxP } = layout;
+  const half   = cw * 0.5;
+  const pivots = count.pivots;
+
+  for (let i = 0; i < pivots.length - 1; i++) {
+    const ct = count.colorTypes[i] ?? 0;
+    if (ct !== colorType) continue;
+    const p0 = pivots[i];
+    const p1 = pivots[i + 1];
+    const x0 = tx + p0.barIndex * cw + half;
+    const y0 = pToY(p0.price, minP, maxP, chartTop, chartH);
+    const x1 = tx + p1.barIndex * cw + half;
+    const y1 = pToY(p1.price, minP, maxP, chartTop, chartH);
+    path.moveTo(x0, y0);
+    path.lineTo(x1, y1);
+  }
+  return path;
+}
+
+// Circle markers at each pivot (stroked = ring appearance)
+function buildCirclePath(
+  count:    SerializedCount,
+  tx:       number,
+  cw:       number,
+  layout:   ChartLayoutParams,
+  chartTop: number,
+  chartH:   number,
+): SkPath {
+  'worklet';
+  const path = Skia.Path.Make();
+  const { minP, maxP } = layout;
+  const half = cw * 0.5;
+
+  for (const pivot of count.pivots) {
+    const x = tx + pivot.barIndex * cw + half;
+    const y = pToY(pivot.price, minP, maxP, chartTop, chartH);
+    path.addCircle(x, y, 3); // 3 px radius → 6 px diameter per spec
+  }
+  return path;
+}
+
+// Label position: placed at pivots[pivotIdx] (1-based, endpoint of wave)
+function labelPos(
+  count:    SerializedCount,
+  idx:      number,   // 1..5
+  tx:       number,
+  cw:       number,
+  layout:   ChartLayoutParams,
+  chartTop: number,
+  chartH:   number,
+): { x: number; y: number } {
+  'worklet';
+  const pivot = count.pivots[idx];
+  if (!pivot) return { x: -200, y: -200 };
+  const { minP, maxP } = layout;
+  const x = tx + pivot.barIndex * cw + cw * 0.5 - 5;
+  const y = pToY(pivot.price, minP, maxP, chartTop, chartH);
+  const isHigh = count.isBullish ? idx % 2 === 1 : idx % 2 === 0;
+  const offsetY = isHigh ? -16 : 18;   // 8 px clearance + font height
+  return { x, y: y + offsetY };
+}
+
+// ── Per-count overlay component ───────────────────────────────────────────────
 
 interface WaveCountOverlayProps {
   serialized:  SharedValue<SerializedCount>;
@@ -162,23 +251,51 @@ function WaveCountOverlay({
   opacity,
   font,
 }: WaveCountOverlayProps) {
-  const polyline = useDerivedValue((): SkPath => {
+
+  // ── Segment paths (one per color type) ────────────────────────────────────
+  const impulsePath = useDerivedValue((): SkPath => {
     'worklet';
-    const count = serialized.value;
-    return buildWavePolyline(count, translateX.value, candleW.value, layoutDV.value, chartTop, chartDrawH);
+    return buildSegmentPath(
+      serialized.value, 0,
+      translateX.value, candleW.value, layoutDV.value, chartTop, chartDrawH,
+    );
+  });
+  const correctivePath = useDerivedValue((): SkPath => {
+    'worklet';
+    return buildSegmentPath(
+      serialized.value, 1,
+      translateX.value, candleW.value, layoutDV.value, chartTop, chartDrawH,
+    );
+  });
+  const bearishPath = useDerivedValue((): SkPath => {
+    'worklet';
+    return buildSegmentPath(
+      serialized.value, 2,
+      translateX.value, candleW.value, layoutDV.value, chartTop, chartDrawH,
+    );
   });
 
-  // Pre-compute all 5 label positions in one worklet pass
+  // ── Circle markers ─────────────────────────────────────────────────────────
+  const circlePath = useDerivedValue((): SkPath => {
+    'worklet';
+    return buildCirclePath(
+      serialized.value,
+      translateX.value, candleW.value, layoutDV.value, chartTop, chartDrawH,
+    );
+  });
+
+  // ── Label positions ────────────────────────────────────────────────────────
   const positions = useDerivedValue(() => {
     'worklet';
-    const count = serialized.value;
-    const tx = translateX.value;
-    const cw = candleW.value;
+    const count  = serialized.value;
+    const tx     = translateX.value;
+    const cw     = candleW.value;
     const layout = layoutDV.value;
-    return [1, 2, 3, 4, 5].map((i) => labelPos(count, i, tx, cw, layout, chartTop, chartDrawH));
+    return [1, 2, 3, 4, 5].map((i) =>
+      labelPos(count, i, tx, cw, layout, chartTop, chartDrawH),
+    );
   });
 
-  // Extract x / y for each of the 5 labels into separate derived values
   const x1 = useDerivedValue(() => positions.value[0].x);
   const y1 = useDerivedValue(() => positions.value[0].y);
   const x2 = useDerivedValue(() => positions.value[1].x);
@@ -190,34 +307,93 @@ function WaveCountOverlay({
   const x5 = useDerivedValue(() => positions.value[4].x);
   const y5 = useDerivedValue(() => positions.value[4].y);
 
-  const color = useDerivedValue(() => serialized.value.isBullish ? CHART_COLORS.bullBody : CHART_COLORS.bearBody);
-
-  // Individual label SharedValues so Skia Text updates reactively when data arrives
+  // ── Label texts ────────────────────────────────────────────────────────────
   const lbl0 = useDerivedValue(() => serialized.value.labels[0] ?? '');
   const lbl1 = useDerivedValue(() => serialized.value.labels[1] ?? '');
   const lbl2 = useDerivedValue(() => serialized.value.labels[2] ?? '');
   const lbl3 = useDerivedValue(() => serialized.value.labels[3] ?? '');
   const lbl4 = useDerivedValue(() => serialized.value.labels[4] ?? '');
 
+  // ── Per-wave label colors (gray for alt, wave-color for primary) ───────────
+  const lbl0Color = useDerivedValue((): string => {
+    'worklet';
+    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
+    const ct = serialized.value.colorTypes[0] ?? 0;
+    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+  });
+  const lbl1Color = useDerivedValue((): string => {
+    'worklet';
+    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
+    const ct = serialized.value.colorTypes[1] ?? 0;
+    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+  });
+  const lbl2Color = useDerivedValue((): string => {
+    'worklet';
+    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
+    const ct = serialized.value.colorTypes[2] ?? 0;
+    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+  });
+  const lbl3Color = useDerivedValue((): string => {
+    'worklet';
+    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
+    const ct = serialized.value.colorTypes[3] ?? 0;
+    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+  });
+  const lbl4Color = useDerivedValue((): string => {
+    'worklet';
+    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
+    const ct = serialized.value.colorTypes[4] ?? 0;
+    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+  });
+
+  // ── Segment / circle colors (gray for alt) ─────────────────────────────────
+  const impulseColor    = useDerivedValue((): string => {
+    'worklet';
+    return serialized.value.isAlt ? WAVE_ALT_COLOR : WAVE_IMPULSE_COLOR;
+  });
+  const correctiveColor = useDerivedValue((): string => {
+    'worklet';
+    return serialized.value.isAlt ? WAVE_ALT_COLOR : WAVE_CORRECTIVE_COLOR;
+  });
+  const bearishColor    = useDerivedValue((): string => {
+    'worklet';
+    return serialized.value.isAlt ? WAVE_ALT_COLOR : WAVE_BEARISH_COLOR;
+  });
+  const circleColor     = useDerivedValue((): string => {
+    'worklet';
+    return serialized.value.isAlt ? WAVE_ALT_COLOR : WAVE_IMPULSE_COLOR;
+  });
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const strokeW = serialized.value.isAlt ? 1.0 : 1.8;
+
   if (font === null) {
     return (
       <Group opacity={opacity}>
-        <Path path={polyline} color={color} style="stroke" strokeWidth={1.5} />
+        <Path path={impulsePath}    color={impulseColor}    style="stroke" strokeWidth={strokeW} />
+        <Path path={correctivePath} color={correctiveColor} style="stroke" strokeWidth={strokeW} />
+        <Path path={bearishPath}    color={bearishColor}    style="stroke" strokeWidth={strokeW} />
+        <Path path={circlePath}     color={circleColor}     style="stroke" strokeWidth={1.2} />
       </Group>
     );
   }
 
   return (
     <Group opacity={opacity}>
-      {/* Wave polyline */}
-      <Path path={polyline} color={color} style="stroke" strokeWidth={1.5} />
+      {/* Wave segments — each in its own color */}
+      <Path path={impulsePath}    color={impulseColor}    style="stroke" strokeWidth={strokeW} />
+      <Path path={correctivePath} color={correctiveColor} style="stroke" strokeWidth={strokeW} />
+      <Path path={bearishPath}    color={bearishColor}    style="stroke" strokeWidth={strokeW} />
 
-      {/* Wave labels at each pivot endpoint */}
-      <Text x={x1} y={y1} text={lbl0} font={font} color={color} />
-      <Text x={x2} y={y2} text={lbl1} font={font} color={color} />
-      <Text x={x3} y={y3} text={lbl2} font={font} color={color} />
-      <Text x={x4} y={y4} text={lbl3} font={font} color={color} />
-      <Text x={x5} y={y5} text={lbl4} font={font} color={color} />
+      {/* Circle markers at each pivot */}
+      <Path path={circlePath} color={circleColor} style="stroke" strokeWidth={1.2} />
+
+      {/* Wave labels */}
+      <Text x={x1} y={y1} text={lbl0} font={font} color={lbl0Color} />
+      <Text x={x2} y={y2} text={lbl1} font={font} color={lbl1Color} />
+      <Text x={x3} y={y3} text={lbl2} font={font} color={lbl2Color} />
+      <Text x={x4} y={y4} text={lbl3} font={font} color={lbl3Color} />
+      <Text x={x5} y={y5} text={lbl4} font={font} color={lbl4Color} />
     </Group>
   );
 }
@@ -233,9 +409,9 @@ export interface WaveOverlayLayerProps {
   chartTop:        number;
   chartDrawH:      number;
   chartAreaW:      number;
-  /** Price at which the active scenario is invalidated. 0 = hidden. */
   activeStopPrice: number;
-  /** JetBrains Mono Bold or system monospace fallback. */
+  /** Show the second-probability alternate count (Part 2). */
+  showAlt:         boolean;
   font:            SkFont | null;
 }
 
@@ -249,16 +425,30 @@ export function WaveOverlayLayer({
   chartDrawH,
   chartAreaW,
   activeStopPrice,
+  showAlt,
   font,
 }: WaveOverlayLayerProps) {
   const primarySV   = useSharedValue<SerializedCount>(NULL_COUNT);
   const secondarySV = useSharedValue<SerializedCount>(NULL_COUNT);
   const stopPriceSV = useSharedValue<number>(0);
 
+  // Sync serialized counts whenever inputs change
   useEffect(() => {
-    primarySV.value   = waveCounts[0] ? serializeCount(waveCounts[0], sliceOffset) : NULL_COUNT;
-    secondarySV.value = waveCounts[1] ? serializeCount(waveCounts[1], sliceOffset) : NULL_COUNT;
-  }, [waveCounts, sliceOffset, primarySV, secondarySV]);
+    primarySV.value = waveCounts[0]
+      ? serializeCount(waveCounts[0], sliceOffset, false)
+      : NULL_COUNT;
+
+    if (showAlt && waveCounts[0] && waveCounts[1]) {
+      const pProb = waveCounts[0].posterior.posterior;
+      const aProb = waveCounts[1].posterior.posterior;
+      const withinThreshold = pProb - aProb <= 0.30;
+      secondarySV.value = withinThreshold
+        ? serializeCount(waveCounts[1], sliceOffset, true)
+        : NULL_COUNT;
+    } else {
+      secondarySV.value = NULL_COUNT;
+    }
+  }, [waveCounts, sliceOffset, showAlt, primarySV, secondarySV]);
 
   useEffect(() => {
     stopPriceSV.value = activeStopPrice;
@@ -268,7 +458,7 @@ export function WaveOverlayLayer({
   const invalidationPath = useDerivedValue((): SkPath => {
     'worklet';
     const stopP = stopPriceSV.value;
-    const path = Skia.Path.Make();
+    const path  = Skia.Path.Make();
     if (stopP <= 0) return path;
     const { minP, maxP } = layoutDV.value;
     const range = maxP - minP;
@@ -297,7 +487,7 @@ export function WaveOverlayLayer({
 
   return (
     <>
-      {/* Secondary count — dimmed */}
+      {/* Alternate count — dimmed, gray, "alt-" labels */}
       <WaveCountOverlay
         serialized={secondarySV}
         translateX={translateX}
@@ -305,10 +495,11 @@ export function WaveOverlayLayer({
         layoutDV={layoutDV}
         chartTop={chartTop}
         chartDrawH={chartDrawH}
-        opacity={0.35}
+        opacity={0.40}
         font={font}
       />
-      {/* Primary count — full opacity */}
+
+      {/* Primary count — full opacity, per-wave colors */}
       <WaveCountOverlay
         serialized={primarySV}
         translateX={translateX}
@@ -319,7 +510,8 @@ export function WaveOverlayLayer({
         opacity={1.0}
         font={font}
       />
-      {/* Invalidation / stop price line */}
+
+      {/* Invalidation / stop-price dashed line */}
       {activeStopPrice > 0 && (
         <Group>
           <Path
