@@ -5,6 +5,7 @@
     { "source": "/api/scenarios",  "destination": "/api/quant-api" },
     { "source": "/api/regime",     "destination": "/api/quant-api" },
     { "source": "/api/gex",        "destination": "/api/quant-api" },
-    { "source": "/api/signals",    "destination": "/api/quant-api" }
+    { "source": "/api/signals",    "destination": "/api/quant-api" },
+    { "source": "/api/milkyway(.*)", "destination": "/api/milkyway" }
   ]
 }

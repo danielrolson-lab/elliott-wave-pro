@@ -41,6 +41,7 @@ import { WaveGridScreen }       from '../app/wave-grid';
 import { EarningsScreen }       from '../app/earnings';
 import { CorrelationScreen }    from '../app/correlation';
 import { AlertDetailScreen }    from '../app/alert-detail';
+import { MilkyWayScreen }       from '../app/milkyway';
 import { PaywallScreen }        from '../components/paywall/PaywallScreen';
 import { supabase }             from '../utils/supabase';
 import { useAuthStore }         from '../stores/auth';
@@ -70,6 +71,7 @@ export type RootTabParamList = {
   Watchlist: undefined;
   Chart:     undefined;
   Flow:      undefined;
+  MilkyWay:  undefined;
   Settings:  undefined;
 };
 
@@ -141,6 +143,7 @@ const TAB_ICONS: Record<string, string> = {
   Watchlist: '☆',
   Chart:     '▤',
   Flow:      '⟳',
+  MilkyWay:  '🌌',
   Settings:  '⚙',
 };
 
@@ -168,6 +171,7 @@ function MainTabs() {
       <Tab.Screen name="Watchlist" component={WatchlistScreen} />
       <Tab.Screen name="Chart"     component={ChartNavigator} />
       <Tab.Screen name="Flow"      component={FlowScreen} />
+      <Tab.Screen name="MilkyWay"  component={MilkyWayScreen} options={{ title: 'Milky Way' }} />
       <Tab.Screen name="Settings"  component={SettingsScreen} />
     </Tab.Navigator>
   );

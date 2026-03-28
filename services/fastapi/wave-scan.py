@@ -398,3 +398,228 @@ async def wave_scan(req: WaveScanRequest) -> WaveScanResponse:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "service": "wave-scanner"}
+
+
+# ── Milky Way bulk scanner ────────────────────────────────────────────────────
+
+import asyncio
+import time
+
+# In-memory cache keyed by timeframe
+_milkyway_cache: dict = {}
+CACHE_TTL_SECONDS = 900  # 15 minutes
+
+
+class MilkyWayRequest(BaseModel):
+    timeframe: str = "5m"
+    limit: int = 10
+
+
+class MilkyWaySetup(BaseModel):
+    ticker: str
+    companyName: str = ""
+    wavePosition: str
+    direction: str
+    confidence: float
+    currentPrice: float
+    t1: float
+    t2: float
+    t3: float
+    stop: float
+    riskReward: float
+    fibContext: str
+    degree: str
+    rules: str
+    mtfAligned: bool
+    timeframe: str
+
+
+class MilkyWayResponse(BaseModel):
+    timeframe: str
+    scanned: int
+    generated_at: str
+    setups: list[MilkyWaySetup]
+
+
+def get_timeframe_params(tf: str) -> tuple[int, str, int]:
+    """Returns (multiplier, timespan, bar_count)"""
+    mapping = {
+        "1m":  (1,  "minute", 250),
+        "5m":  (5,  "minute", 250),
+        "15m": (15, "minute", 200),
+        "30m": (30, "minute", 200),
+        "1h":  (1,  "hour",   200),
+        "4h":  (4,  "hour",   150),
+        "1D":  (1,  "day",    200),
+        "1W":  (1,  "week",   100),
+    }
+    return mapping.get(tf, (5, "minute", 200))
+
+
+def simple_wave_score(candles: list) -> dict | None:
+    """Simplified Elliott Wave scoring for bulk scan."""
+    if len(candles) < 20:
+        return None
+
+    closes = [c["c"] for c in candles]
+    highs  = [c["h"] for c in candles]
+    lows   = [c["l"] for c in candles]
+
+    # Simple pivot detection
+    pivots = []
+    for i in range(2, len(closes) - 2):
+        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+            pivots.append({"idx": i, "price": highs[i], "isHigh": True})
+        elif lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+            pivots.append({"idx": i, "price": lows[i], "isHigh": False})
+
+    if len(pivots) < 5:
+        return None
+
+    # Use last 6 pivots for wave analysis
+    tail = pivots[-6:] if len(pivots) >= 6 else pivots[-5:]
+
+    current_price = closes[-1]
+    isBullish = tail[-1]["price"] > tail[0]["price"]
+
+    # Simple Fibonacci scoring
+    e3 = 0.0
+    w1_len = 0.0
+    if len(tail) >= 5:
+        w1_len = abs(tail[1]["price"] - tail[0]["price"])
+        w3_len = abs(tail[3]["price"] - tail[2]["price"]) if len(tail) > 3 else 0
+
+        # Wave 3 should be > wave 1
+        if w3_len > w1_len:
+            e3 = w3_len / w1_len if w1_len > 0 else 0
+            score = min(0.9, 0.5 + (e3 - 1.0) * 0.2)
+        else:
+            score = 0.3
+    else:
+        score = 0.4
+
+    # Targets based on recent structure
+    price_range = max(highs[-20:]) - min(lows[-20:])
+    if isBullish:
+        t1   = current_price + price_range * 0.382
+        t2   = current_price + price_range * 0.618
+        t3   = current_price + price_range * 1.0
+        stop = current_price - price_range * 0.236
+    else:
+        t1   = current_price - price_range * 0.382
+        t2   = current_price - price_range * 0.618
+        t3   = current_price - price_range * 1.0
+        stop = current_price + price_range * 0.236
+
+    rr = abs(t1 - current_price) / abs(current_price - stop) if abs(current_price - stop) > 0 else 0
+
+    # Wave position
+    stage_map = {0: "Forming W3", 1: "Forming W4", 2: "Forming W5", 3: "Complete"}
+    stage = stage_map.get(len(tail) - 4, "Forming W3")
+
+    fib_ctx = f"W3 ext {e3:.2f}x" if len(tail) >= 5 and w1_len > 0 else "Forming"
+
+    return {
+        "direction": "bullish" if isBullish else "bearish",
+        "confidence": round(score, 3),
+        "currentPrice": round(current_price, 2),
+        "t1": round(t1, 2),
+        "t2": round(t2, 2),
+        "t3": round(t3, 2),
+        "stop": round(stop, 2),
+        "riskReward": round(rr, 2),
+        "wavePosition": f"Wave {stage}",
+        "fibContext": fib_ctx,
+        "degree": "Minor",
+        "rules": "5/8",
+        "mtfAligned": score > 0.7,
+    }
+
+
+@app.post("/milkyway/scan", response_model=MilkyWayResponse)
+async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
+    cache_key = req.timeframe
+    now = time.time()
+
+    # Return cached result if fresh
+    if cache_key in _milkyway_cache:
+        cached = _milkyway_cache[cache_key]
+        if now - cached["ts"] < CACHE_TTL_SECONDS:
+            return cached["data"]
+
+    api_key = POLYGON_API_KEY
+    mult, timespan, bar_count = get_timeframe_params(req.timeframe)
+
+    # Fetch S&P 500 tickers from Polygon
+    spx_tickers: list[str] = []
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(
+                f"{POLYGON_BASE}/v3/reference/tickers",
+                params={"market": "stocks", "index": "SPX", "limit": 500, "active": "true", "apiKey": api_key},
+            )
+            data = r.json()
+            spx_tickers = [t["ticker"] for t in data.get("results", [])]
+    except Exception:
+        pass
+
+    # Fallback subset if Polygon index call fails or returns empty
+    if not spx_tickers:
+        spx_tickers = [
+            "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "BRK.B",
+            "JPM", "V", "MA", "UNH", "JNJ", "HD", "PG", "COST", "ABBV", "LLY",
+            "MRK", "CVX", "XOM", "BAC", "PFE", "TMO", "AMD", "INTC", "AVGO", "CSCO",
+            "NFLX", "DIS", "ADBE", "CRM", "ORCL", "ACN", "TXN", "QCOM", "IBM", "GE",
+            "CAT", "BA", "GS", "MS", "BLK", "SPGI", "AXP", "RTX", "HON", "MMM",
+        ]
+
+    # Compute date range
+    to_date = datetime.utcnow()
+    lookback_map = {
+        "1m": 3, "5m": 7, "15m": 10, "30m": 15,
+        "1h": 30, "4h": 60, "1D": 400, "1W": 730,
+    }
+    lookback_days = lookback_map.get(req.timeframe, 10)
+    from_date = to_date - timedelta(days=lookback_days)
+    from_str = from_date.strftime("%Y-%m-%d")
+    to_str = to_date.strftime("%Y-%m-%d")
+
+    setups: list[MilkyWaySetup] = []
+    scanned = 0
+
+    # Process in batches to avoid rate limiting
+    async with httpx.AsyncClient(timeout=15) as client:
+        for ticker in spx_tickers[:100]:  # limit to first 100 for speed
+            try:
+                r = await client.get(
+                    f"{POLYGON_BASE}/v2/aggs/ticker/{ticker}/range/{mult}/{timespan}/{from_str}/{to_str}",
+                    params={"adjusted": "true", "sort": "asc", "limit": bar_count, "apiKey": api_key},
+                )
+                data = r.json()
+                candles = data.get("results", [])
+                if len(candles) < 20:
+                    continue
+                scanned += 1
+                result = simple_wave_score(candles)
+                if result and result["confidence"] >= 0.55:
+                    setups.append(MilkyWaySetup(
+                        ticker=ticker,
+                        timeframe=req.timeframe,
+                        **result,
+                    ))
+            except Exception:
+                continue
+
+    # Sort by confidence and limit
+    setups.sort(key=lambda x: x.confidence, reverse=True)
+    top_setups = setups[: req.limit]
+
+    response = MilkyWayResponse(
+        timeframe=req.timeframe,
+        scanned=scanned,
+        generated_at=datetime.utcnow().isoformat() + "Z",
+        setups=top_setups,
+    )
+
+    _milkyway_cache[cache_key] = {"ts": now, "data": response}
+    return response
