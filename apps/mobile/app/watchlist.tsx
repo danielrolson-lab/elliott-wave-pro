@@ -39,6 +39,7 @@ import { useMarketDataStore } from '../stores/marketData';
 import { CHART_COLORS } from '../components/chart/chartTypes';
 import type { Instrument } from '@elliott-wave-pro/wave-engine';
 import { getLeveragedSpec, decayColor, decaySeverity, computeDecay } from '../utils/etfDecayEngine';
+// (price fetching is handled by useWatchlistPrices hook in AppNavigator)
 
 // ── MMKV storage ─────────────────────────────────────────────────────────────
 
@@ -214,8 +215,8 @@ function WatchlistCard({ item, onDelete, onDragStart, isDragging }: WatchlistCar
   const price  = quote?.last        ?? item.lastPrice;
   const change = quote?.changePercent ?? item.changePercent;
 
-  // Sparkline: use marketData 5m candles, last 30
-  const candles = useMarketDataStore((s) => s.candles[`${item.id}_5m`]);
+  // Sparkline: daily candles fetched via /prev route, last 30
+  const candles = useMarketDataStore((s) => s.candles[`${item.id}_1D`] ?? s.candles[`${item.id}_5m`]);
   const sparkPrices = (candles ?? []).slice(-30).map((c) => c.close);
 
   // Swipe-to-delete

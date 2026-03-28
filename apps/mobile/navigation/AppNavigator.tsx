@@ -47,6 +47,7 @@ import { useAuthStore }         from '../stores/auth';
 import { useTheme }             from '../theme/ThemeContext';
 import { useAlertEngine }       from '../hooks/useAlertEngine';
 import { useRevenueCat }        from '../hooks/useRevenueCat';
+import { useWatchlistPrices }   from '../hooks/useWatchlistPrices';
 
 // ── Param lists ───────────────────────────────────────────────────────────────
 
@@ -223,6 +224,9 @@ export function AppNavigator() {
 
   // Initialize RevenueCat + sync subscription tier
   useRevenueCat();
+
+  // Fetch previous-day prices + sparkline data for all watchlist tickers
+  useWatchlistPrices();
 
   // Bootstrap: resolve persisted session + subscribe to future changes.
   // Uses useAuthStore.getState() instead of hook-destructured actions to avoid

@@ -24,7 +24,7 @@ interface Props {
 }
 
 function sentimentColor(bullishPct: number): string {
-  if (bullishPct > 0.6) return DARK.bullish;
+  if (bullishPct > 0.5) return DARK.bullish;
   if (bullishPct < 0.4) return DARK.bearish;
   return DARK.neutral;
 }
