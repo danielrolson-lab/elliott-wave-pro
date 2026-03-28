@@ -41,13 +41,21 @@ type PageIndex = 0 | 1 | 2 | 3;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
+export interface VisiblePages {
+  rsi:    boolean;
+  macd:   boolean;
+  volume: boolean;
+  cvd:    boolean;
+}
+
 export interface IndicatorPanelProps {
-  ticker:     string;
-  timeframe:  string;
-  candles:    readonly OHLCV[];
-  translateX: SharedValue<number>;
-  candleW:    SharedValue<number>;
-  font:       SkFont | null;
+  ticker:       string;
+  timeframe:    string;
+  candles:      readonly OHLCV[];
+  translateX:   SharedValue<number>;
+  candleW:      SharedValue<number>;
+  font:         SkFont | null;
+  visiblePages?: VisiblePages;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -59,14 +67,31 @@ export function IndicatorPanel({
   translateX,
   candleW,
   font,
+  visiblePages,
 }: IndicatorPanelProps) {
   const { width: screenW } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [activePage, setActivePage] = useState<PageIndex>(0);
 
+  // Build the list of visible page labels based on the visiblePages prop
+  const visiblePageLabels = PAGES.filter((p) => {
+    if (!visiblePages) return true;
+    if (p === 'RSI 14')         return visiblePages.rsi;
+    if (p === 'MACD (12,26,9)') return visiblePages.macd;
+    if (p === 'Volume')         return visiblePages.volume;
+    if (p === 'CVD')            return visiblePages.cvd;
+    return true;
+  });
+
+  // If all pages are hidden, render nothing
+  if (visiblePageLabels.length === 0) return null;
+
+  // Clamp activePage if the selected index is now out of range
+  const clampedPage = Math.min(activePage, (visiblePageLabels.length - 1) as PageIndex) as PageIndex;
+
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const page = Math.round(e.nativeEvent.contentOffset.x / screenW) as PageIndex;
-    if (page !== activePage) setActivePage(page);
+    if (page !== clampedPage) setActivePage(page);
   };
 
   const sharedProps = {
@@ -78,16 +103,21 @@ export function IndicatorPanel({
     numCandles: candles.length,
   };
 
+  const showRSI    = !visiblePages || visiblePages.rsi;
+  const showMACD   = !visiblePages || visiblePages.macd;
+  const showVolume = !visiblePages || visiblePages.volume;
+  const showCVD    = !visiblePages || visiblePages.cvd;
+
   return (
     <View style={styles.wrapper}>
       {/* ── Header: label + page dots ── */}
       <View style={styles.header}>
-        <Text style={styles.pageLabel}>{PAGES[activePage]}</Text>
+        <Text style={styles.pageLabel}>{visiblePageLabels[clampedPage]}</Text>
         <View style={styles.dots}>
-          {PAGES.map((_, i) => (
+          {visiblePageLabels.map((_, i) => (
             <View
               key={i}
-              style={[styles.dot, i === activePage && styles.dotActive]}
+              style={[styles.dot, i === clampedPage && styles.dotActive]}
             />
           ))}
         </View>
@@ -104,39 +134,47 @@ export function IndicatorPanel({
         onScroll={handleScroll}
         style={styles.pager}
       >
-        {/* Page 0: RSI */}
-        <View style={{ width: screenW }}>
-          <RSIIndicator {...sharedProps} />
-        </View>
+        {/* RSI page (conditional) */}
+        {showRSI && (
+          <View style={{ width: screenW }}>
+            <RSIIndicator {...sharedProps} />
+          </View>
+        )}
 
-        {/* Page 1: MACD */}
-        <View style={{ width: screenW }}>
-          <MACDIndicator {...sharedProps} />
-        </View>
+        {/* MACD page (conditional) */}
+        {showMACD && (
+          <View style={{ width: screenW }}>
+            <MACDIndicator {...sharedProps} />
+          </View>
+        )}
 
-        {/* Page 2: Volume */}
-        <View style={{ width: screenW }}>
-          <VolumeIndicator
-            ticker={ticker}
-            timeframe={timeframe}
-            candles={candles}
-            translateX={translateX}
-            candleW={candleW}
-            font={font}
-          />
-        </View>
+        {/* Volume page (conditional) */}
+        {showVolume && (
+          <View style={{ width: screenW }}>
+            <VolumeIndicator
+              ticker={ticker}
+              timeframe={timeframe}
+              candles={candles}
+              translateX={translateX}
+              candleW={candleW}
+              font={font}
+            />
+          </View>
+        )}
 
-        {/* Page 3: CVD */}
-        <View style={{ width: screenW }}>
-          <CVDIndicator
-            ticker={ticker}
-            timeframe={timeframe}
-            translateX={translateX}
-            candleW={candleW}
-            font={font}
-            numCandles={candles.length}
-          />
-        </View>
+        {/* CVD page (conditional) */}
+        {showCVD && (
+          <View style={{ width: screenW }}>
+            <CVDIndicator
+              ticker={ticker}
+              timeframe={timeframe}
+              translateX={translateX}
+              candleW={candleW}
+              font={font}
+              numCandles={candles.length}
+            />
+          </View>
+        )}
       </ScrollView>
     </View>
   );

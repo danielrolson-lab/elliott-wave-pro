@@ -6,8 +6,9 @@
  * live ticks are appended by usePolygonWebSocket.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import type { View as RNView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSharedValue } from 'react-native-reanimated';
 import { CandlestickChart }  from '../components/chart/CandlestickChart';
@@ -31,6 +32,9 @@ import { DepthLadder }         from '../components/l2/DepthLadder';
 import { TimeAndSales }        from '../components/l2/TimeAndSales';
 import { DecayMeter }          from '../components/chart/DecayMeter';
 import { VoiceCommandHandler } from '../components/voice/VoiceCommandHandler';
+import { LayerTogglePanel }  from '../components/chart/LayerTogglePanel';
+import { ShareExportSheet }  from '../components/chart/ShareExportSheet';
+import { useChartLayersStore } from '../stores/chartLayers';
 import { SentimentOverlay }   from '../components/sentiment/SentimentOverlay';
 import { useSentiment }       from '../hooks/useSentiment';
 import { ChartGrid }          from '../components/chart/ChartGrid';
@@ -52,6 +56,9 @@ export function ChartScreen() {
   const [compareMode,     setCompareMode]     = useState(false);
   const [showPlaybook,    setShowPlaybook]    = useState(false);
   const [showTickerPicker, setShowTickerPicker] = useState(false);
+  const [showShare,    setShowShare]    = useState(false);
+  const chartViewRef = useRef<RNView>(null);
+  const layers = useChartLayersStore();
   const { width: screenW } = useWindowDimensions();
   const isIPad = screenW > IPAD_MIN_WIDTH;
 
@@ -92,16 +99,27 @@ export function ChartScreen() {
   useWaveAlerts(ACTIVE_TICKER, timeframe, candles, waveCounts);
 
   const overlays = useMemo(() => ({
-    ema9: false, ema21: true, ema50: true, ema200: false,
+    ema9: false,
+    ema21:           layers.ma20,
+    ema50:           layers.ma50,
+    ema200:          layers.ma200,
     sma20: false, sma50: false, sma200: false,
-    vwap: false, anchoredVwap: false,
-    bollingerBands: false, bollingerSd: 2 as const,
+    vwap:            layers.vwap,
+    anchoredVwap: false,
+    bollingerBands:  layers.bb,
+    bollingerSd: 2 as const,
     keltnerChannels: false, ichimoku: false, vpvr: false,
-    elliottWaveLabels: true,
-    fibRetracements: true, fibExtensions: true, fibTimeZones: false,
-    gexLevels: false, priorDayLevels: false, priorWeekLevels: false,
+    elliottWaveLabels: layers.ewWaves,
+    fibRetracements: layers.fibLevels,
+    fibExtensions:   layers.fibLevels,
+    fibTimeZones: false,
+    gexLevels:       layers.showGEX,
+    priorDayLevels: false, priorWeekLevels: false,
     monthlyOpen: false, roundNumbers: false,
-  }), []);
+    showEWChannel:    layers.ewChannel,
+    showInvalidation: layers.invalidation,
+    showWaveLabels:   layers.waveLabels,
+  }), [layers]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -125,7 +143,11 @@ export function ChartScreen() {
             </Pressable>
           )}
           <VoiceCommandHandler />
+          <Pressable style={styles.shareBtn} onPress={() => setShowShare(true)} hitSlop={8}>
+            <Text style={styles.shareBtnText}>⎋</Text>
+          </Pressable>
         </View>
+        <LayerTogglePanel />
 
         {isIPad && (
           <ChartGrid timeframe={timeframe} compareMode={compareMode} />
@@ -147,7 +169,7 @@ export function ChartScreen() {
         {candles.length > 0 && (
           <>
             <View style={styles.chartRow}>
-              <View style={styles.chartMain}>
+              <View ref={chartViewRef} style={styles.chartMain}>
                 <CandlestickChart
                   candles={candles}
                   overlays={overlays}
@@ -202,6 +224,12 @@ export function ChartScreen() {
               translateX={translateX}
               candleW={candleW}
               font={null}
+              visiblePages={{
+                rsi:    layers.showRSI,
+                macd:   layers.showMACD,
+                volume: layers.showVolume,
+                cvd:    layers.showCVD,
+              }}
             />
             <ScrollView style={styles.bottomScroll} showsVerticalScrollIndicator={false}>
               <EarningsCountdownBadge ticker={ACTIVE_TICKER} onPress={() => setShowPlaybook(true)} />
@@ -222,6 +250,18 @@ export function ChartScreen() {
           onClose={() => setShowTickerPicker(false)}
           onSelect={() => setShowTickerPicker(false)}
           currentTicker={ACTIVE_TICKER}
+        />
+        <ShareExportSheet
+          visible={showShare}
+          onClose={() => setShowShare(false)}
+          exportCtx={showShare && candles.length > 0 ? {
+            ticker: ACTIVE_TICKER,
+            timeframe,
+            currentPrice: candles[candles.length - 1]?.close ?? 0,
+            waveCounts: waveCounts as import('@elliott-wave-pro/wave-engine').WaveCount[],
+            candles,
+            chartRef: chartViewRef,
+          } : null}
         />
       </View>
     </SafeAreaView>
@@ -345,5 +385,13 @@ const styles = StyleSheet.create({
   },
   bottomScroll: {
     maxHeight: 280,
+  },
+  shareBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  shareBtnText: {
+    color: DARK.textSecondary,
+    fontSize: 16,
   },
 });
