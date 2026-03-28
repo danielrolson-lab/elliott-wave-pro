@@ -29,7 +29,7 @@ import {
   Text as SkiaText,
   Group,
   Skia,
-  matchFont,
+  useFont,
   type SkFont,
   type SkPath,
 } from '@shopify/react-native-skia';
@@ -260,13 +260,9 @@ export function CandlestickChart({
   const TIME_AXIS_TOP   = CHART_H + VOL_H;
 
   // ── Font (created once on JS thread) ──────────────────────────────────────
-  const font: SkFont | null = useMemo(() => {
-    try {
-      return matchFont({ fontSize: 10 });
-    } catch {
-      return null;
-    }
-  }, []);
+  // useFont is the standard Skia/Expo pattern — loads a bundled TTF via Metro
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const font: SkFont | null = useFont(require('../../assets/fonts/Roboto-Regular.ttf'), 10);
 
   // ── Crosshair HUD state (JS thread) ──────────────────────────────────────
   const [hudData, setHudData] = useState<HudData | null>(null);
