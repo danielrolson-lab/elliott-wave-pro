@@ -34,6 +34,8 @@ import { FlowFeedList }   from '../components/flow/FlowFeedList';
 import { OptionsChain }   from '../components/options/OptionsChain';
 import { IVSurface }      from '../components/options/IVSurface';
 import { DARK }           from '../theme/colors';
+import { DataDelayFooter } from '../components/common/DataDelayFooter';
+import { useTheme }        from '../theme/ThemeContext';
 
 const ACTIVE_TICKER = 'SPY';
 const FALLBACK_TICKERS = ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'META', 'GS'];
@@ -60,6 +62,7 @@ function useRelativeTime(ms: number): string {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export function FlowScreen() {
+  const theme = useTheme();
   const [tab, setTab] = useState<FlowTab>('flow');
 
   // Pass watchlist tickers to flow feed so user's holdings are always included
@@ -87,14 +90,14 @@ export function FlowScreen() {
   const statusColor = STATUS_COLOR[flowStatus];
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.container}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top']}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
 
         {/* ── Header ── */}
-        <View style={styles.header}>
+        <View style={[styles.header, { borderBottomColor: theme.separator }]}>
           <View style={styles.headerLeft}>
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={styles.headerTitle}>Options Flow</Text>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Options Flow</Text>
           </View>
           <View style={styles.headerRight}>
             {tab === 'flow' && flowStatus !== 'error' && (
@@ -111,7 +114,7 @@ export function FlowScreen() {
         </View>
 
         {/* ── Tab row ── */}
-        <View style={styles.tabRow}>
+        <View style={[styles.tabRow, { borderBottomColor: theme.separator }]}>
           {(['flow', 'chain', 'surface'] as FlowTab[]).map((t) => (
             <Pressable
               key={t}
@@ -131,6 +134,7 @@ export function FlowScreen() {
           <View style={styles.flex}>
             <FlowFilterBar />
             <FlowFeedList onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+            <DataDelayFooter ticker={ACTIVE_TICKER} timeframe="5m" />
           </View>
         )}
 

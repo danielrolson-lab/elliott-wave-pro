@@ -33,12 +33,17 @@ import Animated, {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import { MMKV } from 'react-native-mmkv';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useWatchlistStore, type WatchlistItem } from '../stores/watchlist';
 import { useWaveCountStore } from '../stores/waveCount';
 import { useMarketDataStore } from '../stores/marketData';
 import { CHART_COLORS } from '../components/chart/chartTypes';
 import type { Instrument } from '@elliott-wave-pro/wave-engine';
 import { getLeveragedSpec, decayColor, decaySeverity, computeDecay } from '../utils/etfDecayEngine';
+import type { RootTabParamList } from '../navigation/AppNavigator';
+import { DataDelayFooter } from '../components/common/DataDelayFooter';
+import { useTheme } from '../theme/ThemeContext';
 // (price fetching is handled by useWatchlistPrices hook in AppNavigator)
 
 // ── MMKV storage ─────────────────────────────────────────────────────────────
@@ -177,10 +182,11 @@ interface WatchlistCardProps {
   item:      WatchlistItem;
   onDelete:  (id: string) => void;
   onDragStart: (id: string) => void;
+  onPress:   (item: WatchlistItem) => void;
   isDragging: boolean;
 }
 
-function WatchlistCard({ item, onDelete, onDragStart, isDragging }: WatchlistCardProps) {
+function WatchlistCard({ item, onDelete, onDragStart, onPress, isDragging }: WatchlistCardProps) {
   const waveCounts = useWaveCountStore((s) => s.counts[`${item.id}_5m`]);
   const posteriors = useWaveCountStore((s) => s.posteriors);
   const quote      = useMarketDataStore((s) => s.quotes[item.id]);
@@ -245,6 +251,14 @@ function WatchlistCard({ item, onDelete, onDragStart, isDragging }: WatchlistCar
     transform: [{ translateX: translateX.value }],
   }));
 
+  // Tap to navigate to chart
+  const tapGesture = Gesture.Tap()
+    .maxDuration(250)
+    .onEnd(() => {
+      'worklet';
+      runOnJS(onPress)(item);
+    });
+
   // Long press for drag
   const longPressGesture = Gesture.LongPress()
     .minDuration(400)
@@ -253,7 +267,7 @@ function WatchlistCard({ item, onDelete, onDragStart, isDragging }: WatchlistCar
       runOnJS(onDragStart)(item.id);
     });
 
-  const composed = Gesture.Exclusive(longPressGesture, swipeGesture);
+  const composed = Gesture.Exclusive(longPressGesture, tapGesture, swipeGesture);
 
   return (
     <View style={[cardStyles.outer, { height: CARD_H, opacity: isDragging ? 0.4 : 1 }]}>
@@ -516,6 +530,9 @@ const dropdownStyles = StyleSheet.create({
 // ── WatchlistScreen ───────────────────────────────────────────────────────────
 
 export function WatchlistScreen() {
+  const navigation      = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
+  const setActiveTicker = useMarketDataStore((s) => s.setActiveTicker);
+  const theme           = useTheme();
   const { items, addItem, removeItem, reorderItems } = useWatchlistStore();
 
   const [query, setQuery]               = useState('');
@@ -568,6 +585,12 @@ export function WatchlistScreen() {
     setSuggestions([]);
   }, [addItem]);
 
+  // ── Navigate to chart ─────────────────────────────────────────────────────
+  const handleCardPress = useCallback((item: WatchlistItem) => {
+    setActiveTicker(item.instrument.ticker, item.instrument);
+    navigation.navigate('Chart');
+  }, [setActiveTicker, navigation]);
+
   // ── Drag to reorder ───────────────────────────────────────────────────────
   const handleDragStart = useCallback((id: string) => {
     setDraggingId(id);
@@ -599,21 +622,22 @@ export function WatchlistScreen() {
         item={item}
         onDelete={removeItem}
         onDragStart={handleDragStart}
+        onPress={handleCardPress}
         isDragging={draggingId === item.id}
       />
     </TouchableOpacity>
-  ), [draggingId, removeItem, handleDragStart, handleDragEnd]);
+  ), [draggingId, removeItem, handleDragStart, handleDragEnd, handleCardPress]);
 
   const keyExtractor = useCallback((item: WatchlistItem) => item.id, []);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.root}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top']}>
+      <View style={[styles.root, { backgroundColor: theme.background }]}>
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Watchlist</Text>
-          <Text style={styles.headerCount}>{items.length} tickers</Text>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Watchlist</Text>
+          <Text style={[styles.headerCount, { color: theme.textMuted }]}>{items.length} tickers</Text>
         </View>
 
         {/* Search bar + dropdown (BUG-001: wrapper so dropdown is positioned below the search bar) */}
@@ -637,6 +661,11 @@ export function WatchlistScreen() {
             estimatedItemSize={96}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.list}
+            ListFooterComponent={
+              items.length > 0
+                ? <DataDelayFooter ticker={items[0]?.id ?? 'SPY'} timeframe="1D" />
+                : null
+            }
           />
         )}
       </View>

@@ -17,7 +17,9 @@ import { useMarketDataStore } from '../stores/marketData';
 import { useWatchlistStore } from '../stores/watchlist';
 import { CHART_COLORS } from '../components/chart/chartTypes';
 import { RegimeBadge } from '../components/common/RegimeBadge';
+import { DataDelayFooter } from '../components/common/DataDelayFooter';
 import { REGIME_META } from '../utils/regimeClassifier';
+import { useTheme } from '../theme/ThemeContext';
 import type { RootTabParamList } from '../navigation/AppNavigator';
 import type { MarketRegime } from '@elliott-wave-pro/wave-engine';
 
@@ -153,7 +155,9 @@ async function fetchIndexSnapshots(): Promise<Record<string, SnapshotQuote>> {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function HomeScreen() {
-  const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
+  const navigation      = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
+  const setActiveTicker = useMarketDataStore((s) => s.setActiveTicker);
+  const theme = useTheme();
   const [statusInfo, setStatusInfo] = useState<StatusInfo>(() => computeStatus(new Date()));
   const [snapshots,  setSnapshots]  = useState<Record<string, SnapshotQuote>>({});
   const quotes         = useMarketDataStore((s) => s.quotes);
@@ -172,12 +176,12 @@ export function HomeScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top']}>
       {/* ── Screen header ── */}
-      <View style={styles.screenHeader}>
-        <Text style={styles.screenTitle}>Markets</Text>
+      <View style={[styles.screenHeader, { borderBottomColor: theme.separator }]}>
+        <Text style={[styles.screenTitle, { color: theme.textPrimary }]}>Markets</Text>
         <Pressable
-          style={styles.editBtn}
+          style={[styles.editBtn, { borderColor: theme.border }]}
           onPress={() => navigation.navigate('Watchlist')}
           hitSlop={8}
         >
@@ -185,7 +189,7 @@ export function HomeScreen() {
         </Pressable>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={[styles.scroll, { backgroundColor: theme.background }]} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
         {/* ── Market status badge ── */}
         <View style={styles.statusRow}>
@@ -195,13 +199,13 @@ export function HomeScreen() {
               {statusInfo.label}
             </Text>
           </View>
-          <Text style={styles.countdownText}>
+          <Text style={[styles.countdownText, { color: theme.textMuted }]}>
             {statusInfo.nextLabel} {formatCountdown(statusInfo.nextMs)}
           </Text>
         </View>
 
         {/* ── Index strip ── */}
-        <Text style={styles.sectionHeader}>INDICES</Text>
+        <Text style={[styles.sectionHeader, { color: theme.textMuted }]}>INDICES</Text>
         <View style={styles.stripRow}>
           {INDEX_TICKERS.map((ticker) => {
             const q = quotes[ticker];
@@ -210,9 +214,9 @@ export function HomeScreen() {
             const change = q?.changePercent ?? snapshots[ticker]?.change ?? null;
             const isPos  = (change ?? 0) >= 0;
             return (
-              <View key={ticker} style={styles.stripCard}>
-                <Text style={styles.stripTicker}>{ticker}</Text>
-                <Text style={styles.stripPrice}>
+              <View key={ticker} style={[styles.stripCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.stripTicker, { color: theme.textMuted }]}>{ticker}</Text>
+                <Text style={[styles.stripPrice, { color: theme.textPrimary }]}>
                   {price !== null ? `$${price.toFixed(2)}` : '—'}
                 </Text>
                 <Text style={[styles.stripChange, { color: isPos ? CHART_COLORS.bullBody : CHART_COLORS.bearBody }]}>
@@ -226,15 +230,15 @@ export function HomeScreen() {
         {/* ── Regime strip ── */}
         {Object.keys(regimes).length > 0 && (
           <>
-            <Text style={styles.sectionHeader}>REGIME</Text>
+            <Text style={[styles.sectionHeader, { color: theme.textMuted }]}>REGIME</Text>
             <View style={styles.regimeRow}>
               {INDEX_TICKERS.map((ticker) => {
                 const regime = regimes[ticker] as MarketRegime | undefined;
                 if (!regime) return null;
                 const meta = REGIME_META[regime];
                 return (
-                  <View key={ticker} style={[styles.regimeCard, { borderColor: meta.color }]}>
-                    <Text style={styles.stripTicker}>{ticker}</Text>
+                  <View key={ticker} style={[styles.regimeCard, { backgroundColor: theme.surface, borderColor: meta.color }]}>
+                    <Text style={[styles.stripTicker, { color: theme.textMuted }]}>{ticker}</Text>
                     <RegimeBadge ticker={ticker} size="md" />
                     <Text style={[styles.regimeDesc, { color: meta.color }]} numberOfLines={2}>
                       {meta.label}
@@ -247,14 +251,14 @@ export function HomeScreen() {
         )}
 
         {/* ── Macro strip ── */}
-        <Text style={styles.sectionHeader}>MACRO</Text>
+        <Text style={[styles.sectionHeader, { color: theme.textMuted }]}>MACRO</Text>
         <View style={styles.stripRow}>
           {MACRO_ITEMS.map(({ label, suffix }) => (
-            <View key={label} style={styles.stripCard}>
-              <Text style={styles.stripTicker}>{label}</Text>
+            <View key={label} style={[styles.stripCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.stripTicker, { color: theme.textMuted }]}>{label}</Text>
               {/* TODO: REPLACE WITH LIVE DATA */}
-              <Text style={styles.stripPrice}>—{suffix}</Text>
-              <Text style={[styles.stripChange, { color: CHART_COLORS.textMuted }]}>—</Text>
+              <Text style={[styles.stripPrice, { color: theme.textPrimary }]}>—{suffix}</Text>
+              <Text style={[styles.stripChange, { color: theme.textMuted }]}>—</Text>
             </View>
           ))}
         </View>
@@ -263,7 +267,7 @@ export function HomeScreen() {
         {watchlistItems.length > 0 && (
           <>
             <View style={styles.watchlistHeader}>
-              <Text style={styles.sectionHeader}>WATCHLIST</Text>
+              <Text style={[styles.sectionHeader, { color: theme.textMuted }]}>WATCHLIST</Text>
               <Pressable onPress={() => navigation.navigate('Watchlist')} hitSlop={8}>
                 <Text style={styles.seeAllText}>See All</Text>
               </Pressable>
@@ -276,17 +280,20 @@ export function HomeScreen() {
               return (
                 <Pressable
                   key={item.id}
-                  style={styles.watchlistRow}
-                  onPress={() => navigation.navigate('Chart')}
+                  style={[styles.watchlistRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                  onPress={() => {
+                    setActiveTicker(item.instrument.ticker, item.instrument);
+                    navigation.navigate('Chart');
+                  }}
                 >
                   <View style={styles.watchlistLeft}>
-                    <Text style={styles.watchlistTicker}>{item.id}</Text>
+                    <Text style={[styles.watchlistTicker, { color: theme.textPrimary }]}>{item.id}</Text>
                     {item.waveLabel && (
-                      <Text style={styles.watchlistWave}>W{item.waveLabel}</Text>
+                      <Text style={[styles.watchlistWave, { color: theme.textMuted }]}>W{item.waveLabel}</Text>
                     )}
                   </View>
                   <View style={styles.watchlistRight}>
-                    <Text style={styles.watchlistPrice}>
+                    <Text style={[styles.watchlistPrice, { color: theme.textPrimary }]}>
                       {price !== null ? `$${price.toFixed(2)}` : '—'}
                     </Text>
                     <Text style={[styles.watchlistChange, { color: isPos ? CHART_COLORS.bullBody : CHART_COLORS.bearBody }]}>
@@ -298,6 +305,8 @@ export function HomeScreen() {
             })}
           </>
         )}
+
+        <DataDelayFooter ticker="SPY" timeframe="1D" />
 
       </ScrollView>
     </SafeAreaView>

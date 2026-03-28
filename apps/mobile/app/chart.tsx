@@ -36,9 +36,12 @@ import { useSentiment }       from '../hooks/useSentiment';
 import { ChartGrid }          from '../components/chart/ChartGrid';
 import { EarningsPlaybook, EarningsCountdownBadge } from '../components/earnings/EarningsPlaybook';
 import { useEarnings }        from '../hooks/useEarnings';
+import { DataDelayFooter }    from '../components/common/DataDelayFooter';
+import { TickerPickerModal }  from '../components/chart/TickerPickerModal';
 import { DARK }                from '../theme/colors';
 
-const ACTIVE_TICKER = 'SPY';
+// ACTIVE_TICKER is now driven by the store (set when user taps a watchlist card).
+// Falls back to 'SPY' if nothing has been selected yet.
 
 const IPAD_MIN_WIDTH = 768;
 
@@ -48,8 +51,12 @@ export function ChartScreen() {
   const [l2Tab,        setL2Tab]        = useState<'depth' | 'tape'>('depth');
   const [compareMode,     setCompareMode]     = useState(false);
   const [showPlaybook,    setShowPlaybook]    = useState(false);
+  const [showTickerPicker, setShowTickerPicker] = useState(false);
   const { width: screenW } = useWindowDimensions();
   const isIPad = screenW > IPAD_MIN_WIDTH;
+
+  // Active ticker: set when user taps a watchlist card; defaults to SPY
+  const ACTIVE_TICKER = useMarketDataStore((s) => s.activeTicker ?? 'SPY');
 
   // Backfill real historical candles from Polygon REST
   const { status, error } = usePolygonCandles(ACTIVE_TICKER, timeframe);
@@ -100,7 +107,14 @@ export function ChartScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.container}>
         <View style={styles.chartHeader}>
-          <Text style={styles.tickerLabel}>{ACTIVE_TICKER}</Text>
+          <Pressable
+            style={styles.tickerButton}
+            onPress={() => setShowTickerPicker(true)}
+            hitSlop={8}
+          >
+            <Text style={styles.tickerLabel}>{ACTIVE_TICKER}</Text>
+            <Text style={styles.tickerChevron}>▾</Text>
+          </Pressable>
           <TimeframeSelector activeTimeframe={timeframe} onSelect={setTimeframe} />
           {isIPad && (
             <Pressable
@@ -180,6 +194,7 @@ export function ChartScreen() {
               </Pressable>
             </View>
             <DecayMeter ticker={ACTIVE_TICKER} candles={candles} />
+            <DataDelayFooter ticker={ACTIVE_TICKER} timeframe={timeframe} />
             <IndicatorPanel
               ticker={ACTIVE_TICKER}
               timeframe={timeframe}
@@ -201,6 +216,13 @@ export function ChartScreen() {
             />
           </>
         )}
+
+        <TickerPickerModal
+          visible={showTickerPicker}
+          onClose={() => setShowTickerPicker(false)}
+          onSelect={() => setShowTickerPicker(false)}
+          currentTicker={ACTIVE_TICKER}
+        />
       </View>
     </SafeAreaView>
   );
@@ -220,13 +242,23 @@ const styles = StyleSheet.create({
     alignItems:        'center',
     paddingRight:      8,
   },
-  tickerLabel: {
-    color:      CHART_COLORS.textPrimary,
-    fontSize:   17,
-    fontWeight: '700',
+  tickerButton: {
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: 12,
     paddingVertical:   6,
-    letterSpacing:     0.5,
+    gap:               4,
+  },
+  tickerLabel: {
+    color:        CHART_COLORS.textPrimary,
+    fontSize:     17,
+    fontWeight:   '700',
+    letterSpacing: 0.5,
+  },
+  tickerChevron: {
+    color:    CHART_COLORS.textMuted,
+    fontSize: 12,
+    marginTop: 2,
   },
   comparePill: {
     paddingHorizontal: 10,
