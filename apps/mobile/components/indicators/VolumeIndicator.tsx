@@ -196,7 +196,12 @@ export function VolumeIndicator({
       {/* Axis separator */}
       <Line p1={{ x: CHART_W, y: 0 }} p2={{ x: CHART_W, y: INDICATOR_H }} color={CHART_COLORS.gridLine} strokeWidth={0.5} />
 
-      {/* Value label */}
+      {/* Inline legend — top-left */}
+      {font !== null && (
+        <Text x={4} y={PAD_TOP + 10} text="─ MA20" font={font} color={CHART_COLORS.ema9} />
+      )}
+
+      {/* Current value label */}
       {font !== null && (
         <Text x={CHART_W + 4} y={PAD_TOP + 10} text={currentLabel} font={font} color={CHART_COLORS.textMuted} />
       )}

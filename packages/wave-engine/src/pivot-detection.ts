@@ -70,6 +70,7 @@ function buildZigZag(
   candles: OHLCV[],
   atr: number[],
   atrMultiplier: number,
+  minSwingPct: number,
 ): ZigZagPoint[] {
   const n = candles.length;
   if (n < 3) return [];
@@ -85,10 +86,10 @@ function buildZigZag(
 
   for (let i = 1; i < n; i++) {
     const bar = candles[i];
-    // Minimum swing = atrMultiplier × ATR, floored at 0.05% of price
+    // Minimum swing = atrMultiplier × ATR, floored at minSwingPct of price
     const threshold = Math.max(
       atr[i] * atrMultiplier,
-      bar.close * 0.0005,
+      bar.close * minSwingPct,
     );
 
     if (direction === 'up') {
@@ -176,17 +177,19 @@ function labelPivotTypes(points: ZigZagPoint[]): PivotType[] {
  * @param candles      OHLCV array, sorted oldest → newest
  * @param atrMultiplier  How many ATRs constitute a meaningful swing (default 0.5)
  * @param timeframe    Label stamped on every returned Pivot (default '5m')
+ * @param minSwingPct  Minimum swing as fraction of price (default 0.0005 = 0.05%)
  * @returns            Alternating high/low Pivot array, oldest → newest
  */
 export function detectPivots(
   candles: OHLCV[],
   atrMultiplier = 0.5,
   timeframe = '5m',
+  minSwingPct = 0.0005,
 ): Pivot[] {
   if (candles.length < 3) return [];
 
   const atr = computeATR(candles);
-  const zigzag = buildZigZag(candles, atr, atrMultiplier);
+  const zigzag = buildZigZag(candles, atr, atrMultiplier, minSwingPct);
   const types = labelPivotTypes(zigzag);
 
   return zigzag.map((p, i) => ({

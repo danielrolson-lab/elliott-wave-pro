@@ -260,6 +260,12 @@ export function CandlestickChart({
   const VOL_TOP         = CHART_H;
   const TIME_AXIS_TOP   = CHART_H + VOL_H;
 
+  // Clip rect: prevents candles/overlays from painting over the 62 px price axis
+  const chartClipRect = useMemo(
+    () => Skia.XYWHRect(0, 0, CHART_AREA_W, CANVAS_H),
+    [CHART_AREA_W, CANVAS_H],
+  );
+
   // ── Font (created once on JS thread) ──────────────────────────────────────
   // useFont is the standard Skia/Expo pattern — loads a bundled TTF via Metro
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -608,126 +614,131 @@ export function CandlestickChart({
             />
           )}
 
-          {/* ── Volume layer ── */}
-          <Path path={volBullPath} color={CHART_COLORS.volumeBull} style="fill" />
-          <Path path={volBearPath} color={CHART_COLORS.volumeBear} style="fill" />
+          {/* ── Chart drawing area — clipped to prevent overlap with price axis ── */}
+          <Group clip={chartClipRect}>
 
-          {/* ── Wick layer (behind bodies) ── */}
-          <Path
-            path={wickPath}
-            color={CHART_COLORS.textMuted}
-            style="stroke"
-            strokeWidth={1}
-          />
+            {/* ── Volume layer ── */}
+            <Path path={volBullPath} color={CHART_COLORS.volumeBull} style="fill" />
+            <Path path={volBearPath} color={CHART_COLORS.volumeBear} style="fill" />
 
-          {/* ── Candle body layer ── */}
-          <Path path={bullBodyPath} color={CHART_COLORS.bullBody} style="fill" />
-          <Path path={bearBodyPath} color={CHART_COLORS.bearBody} style="fill" />
-
-          {/* ── MA overlay layer ── */}
-          {overlays.ema9 && (
+            {/* ── Wick layer (behind bodies) ── */}
             <Path
-              path={ema9Path}
-              color={CHART_COLORS.ema9}
+              path={wickPath}
+              color={CHART_COLORS.textMuted}
               style="stroke"
-              strokeWidth={1.5}
+              strokeWidth={1}
             />
-          )}
-          {overlays.ema21 && (
-            <Path
-              path={ema21Path}
-              color={CHART_COLORS.ema21}
-              style="stroke"
-              strokeWidth={1.5}
-            />
-          )}
-          {overlays.ema50 && (
-            <Path
-              path={ema50Path}
-              color={CHART_COLORS.ema50}
-              style="stroke"
-              strokeWidth={1.5}
-            />
-          )}
-          {overlays.ema200 && (
-            <Path
-              path={ema200Path}
-              color={CHART_COLORS.ema200}
-              style="stroke"
-              strokeWidth={1.5}
-            />
-          )}
 
-          {/* ── Fibonacci overlay layer ── */}
-          {overlays.fibRetracements && waveCounts.length > 0 && (
-            <FibonacciOverlayLayer
-              waveCounts={waveCounts}
-              layoutDV={layoutDV}
-              chartTop={CHART_TOP}
-              chartDrawH={CHART_DRAW_H}
-              chartAreaW={CHART_AREA_W}
-              font={font}
-            />
-          )}
+            {/* ── Candle body layer ── */}
+            <Path path={bullBodyPath} color={CHART_COLORS.bullBody} style="fill" />
+            <Path path={bearBodyPath} color={CHART_COLORS.bearBody} style="fill" />
 
-          {/* ── GEX overlay layer ── */}
-          {overlays.gexLevels && (
-            <GEXOverlayLayer
-              levels={gexLevels}
-              layoutDV={layoutDV}
-              chartTop={CHART_TOP}
-              chartDrawH={CHART_DRAW_H}
-              chartAreaW={CHART_AREA_W}
-              font={font}
-            />
-          )}
+            {/* ── MA overlay layer ── */}
+            {overlays.ema9 && (
+              <Path
+                path={ema9Path}
+                color={CHART_COLORS.ema9}
+                style="stroke"
+                strokeWidth={1.5}
+              />
+            )}
+            {overlays.ema21 && (
+              <Path
+                path={ema21Path}
+                color={CHART_COLORS.ema21}
+                style="stroke"
+                strokeWidth={1.5}
+              />
+            )}
+            {overlays.ema50 && (
+              <Path
+                path={ema50Path}
+                color={CHART_COLORS.ema50}
+                style="stroke"
+                strokeWidth={1.5}
+              />
+            )}
+            {overlays.ema200 && (
+              <Path
+                path={ema200Path}
+                color={CHART_COLORS.ema200}
+                style="stroke"
+                strokeWidth={1.5}
+              />
+            )}
 
-          {/* ── Wave channel lines (E4) ── */}
-          {overlays.elliottWaveLabels && waveCounts.length > 0 && (
-            <WaveChannelLayer
-              waveCounts={waveCounts}
-              sliceOffset={waveSliceOffset}
-              translateX={translateX}
-              candleW={candleW}
-              layoutDV={layoutDV}
-              chartTop={CHART_TOP}
-              chartDrawH={CHART_DRAW_H}
-              chartAreaW={CHART_AREA_W}
-              font={font}
-            />
-          )}
+            {/* ── Fibonacci overlay layer ── */}
+            {overlays.fibRetracements && waveCounts.length > 0 && (
+              <FibonacciOverlayLayer
+                waveCounts={waveCounts}
+                layoutDV={layoutDV}
+                chartTop={CHART_TOP}
+                chartDrawH={CHART_DRAW_H}
+                chartAreaW={CHART_AREA_W}
+                font={font}
+              />
+            )}
 
-          {/* ── Wave projections layer (T1/T2/T3 zones + projected path) ── */}
-          {overlays.elliottWaveLabels && waveCounts.length > 0 && (
-            <WaveProjectionLayer
-              waveCounts={waveCounts}
-              candles={candles}
-              translateX={translateX}
-              candleW={candleW}
-              layoutDV={layoutDV}
-              chartTop={CHART_TOP}
-              chartDrawH={CHART_DRAW_H}
-              chartAreaW={CHART_AREA_W}
-              font={font}
-            />
-          )}
+            {/* ── GEX overlay layer ── */}
+            {overlays.gexLevels && (
+              <GEXOverlayLayer
+                levels={gexLevels}
+                layoutDV={layoutDV}
+                chartTop={CHART_TOP}
+                chartDrawH={CHART_DRAW_H}
+                chartAreaW={CHART_AREA_W}
+                font={font}
+              />
+            )}
 
-          {/* ── Elliott Wave overlay layer (per-wave colors, circles, degree notation) ── */}
-          {overlays.elliottWaveLabels && waveCounts.length > 0 && (
-            <WaveOverlayLayer
-              waveCounts={waveCounts}
-              sliceOffset={waveSliceOffset}
-              translateX={translateX}
-              candleW={candleW}
-              layoutDV={layoutDV}
-              chartTop={CHART_TOP}
-              chartDrawH={CHART_DRAW_H}
-              chartAreaW={CHART_AREA_W}
-              activeStopPrice={activeStopPrice}
-              showAlt={showAlt}
-              font={font}
-            />
-          )}
+            {/* ── Wave channel lines (E4) ── */}
+            {overlays.elliottWaveLabels && waveCounts.length > 0 && (
+              <WaveChannelLayer
+                waveCounts={waveCounts}
+                sliceOffset={waveSliceOffset}
+                translateX={translateX}
+                candleW={candleW}
+                layoutDV={layoutDV}
+                chartTop={CHART_TOP}
+                chartDrawH={CHART_DRAW_H}
+                chartAreaW={CHART_AREA_W}
+                font={font}
+              />
+            )}
+
+            {/* ── Wave projections layer (T1/T2/T3 zones + projected path) ── */}
+            {overlays.elliottWaveLabels && waveCounts.length > 0 && (
+              <WaveProjectionLayer
+                waveCounts={waveCounts}
+                candles={candles}
+                translateX={translateX}
+                candleW={candleW}
+                layoutDV={layoutDV}
+                chartTop={CHART_TOP}
+                chartDrawH={CHART_DRAW_H}
+                chartAreaW={CHART_AREA_W}
+                font={font}
+              />
+            )}
+
+            {/* ── Elliott Wave overlay layer (per-wave colors, circles, degree notation) ── */}
+            {overlays.elliottWaveLabels && waveCounts.length > 0 && (
+              <WaveOverlayLayer
+                waveCounts={waveCounts}
+                sliceOffset={waveSliceOffset}
+                translateX={translateX}
+                candleW={candleW}
+                layoutDV={layoutDV}
+                chartTop={CHART_TOP}
+                chartDrawH={CHART_DRAW_H}
+                chartAreaW={CHART_AREA_W}
+                activeStopPrice={activeStopPrice}
+                showAlt={showAlt}
+                font={font}
+              />
+            )}
+
+          </Group> {/* end chart clip */}
 
           {/* ── Crosshair layer ── */}
           <Group opacity={crosshairOpacity}>

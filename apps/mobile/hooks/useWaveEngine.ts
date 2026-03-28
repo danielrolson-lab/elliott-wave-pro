@@ -28,6 +28,18 @@ import { useWaveCountStore } from '../stores/waveCount';
 const MAX_CANDLES = 200;
 const EMPTY: WaveCount[] = [];
 
+// Shorter timeframes need a smaller minimum-swing floor to detect enough pivots.
+// The default 0.05% floor is too large for 1m/15m on high-priced stocks.
+const MIN_SWING_PCT: Readonly<Record<string, number>> = {
+  '1m':  0.00015,   // 0.015% — detect finer swings on 1-min bars
+  '15m': 0.00025,   // 0.025% — slightly tighter than default for 15-min
+};
+
+// Allow fewer pivots on the shortest timeframe (3.3h window = less structure)
+function minPivots(timeframe: string): number {
+  return timeframe === '1m' ? 4 : 6;
+}
+
 // ── RSI (14-period, Wilder) ───────────────────────────────────────────────────
 
 function computeRSI14(closes: readonly number[]): number {
@@ -151,12 +163,13 @@ export function useWaveEngine(
     const sliceOffset = Math.max(0, candles.length - MAX_CANDLES);
     const slice = candles.slice(sliceOffset) as OHLCV[];
 
-    // Step 1: detect pivots
-    const pivots = detectPivots(slice, 0.5, timeframe);
+    // Step 1: detect pivots (use tighter swing floor for short timeframes)
+    const swingFloor = MIN_SWING_PCT[timeframe] ?? 0.0005;
+    const pivots = detectPivots(slice, 0.5, timeframe, swingFloor);
     if (__DEV__) {
       console.log(`[useWaveEngine] ${ticker}_${timeframe}: slice=${slice.length} bars → ${pivots.length} pivots`);
     }
-    if (pivots.length < 6) return;
+    if (pivots.length < minPivots(timeframe)) return;
 
     // Step 2: generate all valid wave counts (impulse + diagonal)
     const counts = generateWaveCounts(pivots, ticker, timeframe);

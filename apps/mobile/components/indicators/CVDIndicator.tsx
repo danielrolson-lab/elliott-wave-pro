@@ -29,7 +29,7 @@ import { useDerivedValue } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { useIndicatorStore } from '../../stores/indicators';
 import type { CVDDivergencePoint } from '../../stores/indicators';
-import { CHART_COLORS } from '../chart/chartTypes';
+import { CHART_COLORS, CHART_LAYOUT } from '../chart/chartTypes';
 import { INDICATOR_H } from './RSIIndicator';
 
 const PAD_TOP = 8;
@@ -104,6 +104,7 @@ export function CVDIndicator({
   font,
 }: CVDIndicatorProps) {
   const { width: screenW } = useWindowDimensions();
+  const CHART_W = screenW - CHART_LAYOUT.priceAxisWidth;
   const key = `${ticker}_${timeframe}`;
 
   const cvdData = useIndicatorStore((s) => s.cvd[key]);
@@ -140,6 +141,13 @@ export function CVDIndicator({
     const zeroY = cvdToY(0, minV, maxV);
 
     return { rising, falling, zeroY, minV, maxV };
+  });
+
+  // Zero line Y position for right-axis label
+  const zeroYDV = useDerivedValue((): number => {
+    'worklet';
+    const p = paths.value;
+    return p ? p.zeroY - 3 : -100;
   });
 
   // Divergence dot positions (JS thread, static on paint)
@@ -204,10 +212,18 @@ export function CVDIndicator({
         />
       ))}
 
+      {/* Price axis separator */}
+      <Line p1={{ x: CHART_W, y: 0 }} p2={{ x: CHART_W, y: INDICATOR_H }} color={CHART_COLORS.gridLine} strokeWidth={0.5} />
+
+      {/* Zero label on right axis */}
+      {font && (
+        <Text x={CHART_W + 4} y={zeroYDV} text="0" font={font} color={CHART_COLORS.textMuted} />
+      )}
+
       {/* Current value label */}
       {font && (
         <Text
-          x={screenW - 56}
+          x={CHART_W + 4}
           y={PAD_TOP + 10}
           text={`CVD ${lastLabel}`}
           font={font}
