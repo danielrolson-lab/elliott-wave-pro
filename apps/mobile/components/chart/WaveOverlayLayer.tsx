@@ -130,7 +130,6 @@ function serializeCount(count: WaveCount, sliceOffset: number): SerializedCount 
       price:    wave.endPivot.price,
     });
   }
-  // Need at least 2 points to draw a polyline segment
   if (pivots.length < 2) return NULL_COUNT;
 
   return {

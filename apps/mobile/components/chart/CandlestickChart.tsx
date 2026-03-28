@@ -29,6 +29,7 @@ import {
   Text as SkiaText,
   Group,
   Skia,
+  matchFont,
   type SkFont,
   type SkPath,
 } from '@shopify/react-native-skia';
@@ -261,7 +262,7 @@ export function CandlestickChart({
   // ── Font (created once on JS thread) ──────────────────────────────────────
   const font: SkFont | null = useMemo(() => {
     try {
-      return Skia.Font(undefined, 10);
+      return matchFont({ fontSize: 10 });
     } catch {
       return null;
     }
@@ -487,7 +488,7 @@ export function CandlestickChart({
   // ── Gestures ───────────────────────────────────────────────────────────────
 
   // Pinch to zoom (time axis = candleWidth)
-  const pinchStartCW = useSharedValue<number>(candleW.value);
+  const pinchStartCW = useSharedValue<number>(CHART_LAYOUT.candleDefaultW);
   const pinchGesture = Gesture.Pinch()
     .onStart(() => {
       'worklet';
