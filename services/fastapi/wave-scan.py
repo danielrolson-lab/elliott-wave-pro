@@ -461,18 +461,39 @@ class MilkyWayResponse(BaseModel):
 
 
 def get_timeframe_params(tf: str) -> tuple[int, str, int]:
-    """Returns (multiplier, timespan, bar_count)"""
+    """Returns (multiplier, timespan, bar_count) — intraday > 5m built from 5m data."""
+    # 15m/30m: 360 5m bars → 120/60 resampled bars
+    # 1h/4h:   240 5m bars → 20/5 resampled bars (4h needs more days)
+    intraday_via_5m = {"15m", "30m", "1h", "4h"}
+    if tf in intraday_via_5m:
+        return (5, "minute", 360)
     mapping = {
         "1m":  (1,  "minute", 250),
         "5m":  (5,  "minute", 250),
-        "15m": (15, "minute", 200),
-        "30m": (30, "minute", 200),
-        "1h":  (1,  "hour",   200),
-        "4h":  (4,  "hour",   150),
         "1D":  (1,  "day",    200),
         "1W":  (1,  "week",   100),
     }
-    return mapping.get(tf, (5, "minute", 200))
+    return mapping.get(tf, (5, "minute", 250))
+
+
+def resample_bars(bars_5m: list, group_size: int) -> list:
+    """Resample 5-min bars into larger bars by grouping group_size consecutive bars."""
+    out = []
+    for i in range(0, len(bars_5m) - group_size + 1, group_size):
+        g = bars_5m[i: i + group_size]
+        out.append({
+            "o": g[0]["o"],
+            "h": max(b["h"] for b in g),
+            "l": min(b["l"] for b in g),
+            "c": g[-1]["c"],
+            "v": sum(b.get("v", 0) for b in g),
+            "t": g[0]["t"],
+        })
+    return out
+
+
+# 5m bars per target timeframe bar
+_RESAMPLE_MAP = {"15m": 3, "30m": 6, "1h": 12, "4h": 48}
 
 
 def simple_wave_score(candles: list) -> dict | None:
@@ -634,8 +655,12 @@ async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
     # Compute date range
     to_date = datetime.utcnow()
     lookback_map = {
-        "1m": 3, "5m": 7, "15m": 10, "30m": 15,
-        "1h": 30, "4h": 60, "1D": 400, "1W": 730,
+        "1m": 3, "5m": 7,
+        "15m": 7,   # fetched as 5m then resampled
+        "30m": 14,  # fetched as 5m then resampled
+        "1h":  20,  # fetched as 5m then resampled
+        "4h":  40,  # fetched as 5m then resampled
+        "1D": 400, "1W": 730,
     }
     lookback_days = lookback_map.get(req.timeframe, 10)
     from_date = to_date - timedelta(days=lookback_days)
@@ -645,7 +670,10 @@ async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
     setups: list[MilkyWaySetup] = []
     scanned = 0
 
-    async def fetch_ticker(client: httpx.AsyncClient, ticker: str) -> MilkyWaySetup | None:
+    resample_group = _RESAMPLE_MAP.get(req.timeframe, 0)
+
+    # Returns (had_data, setup_or_None)
+    async def fetch_ticker(client: httpx.AsyncClient, ticker: str) -> tuple[bool, MilkyWaySetup | None]:
         try:
             r = await client.get(
                 f"{POLYGON_BASE}/v2/aggs/ticker/{ticker}/range/{mult}/{timespan}/{from_str}/{to_str}",
@@ -653,28 +681,33 @@ async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
             )
             data = r.json()
             candles = data.get("results", [])
+            # Resample if needed (15m/30m/1h/4h built from 5m)
+            if resample_group > 0 and candles:
+                candles = resample_bars(candles, resample_group)
             if len(candles) < 20:
-                return None
+                return (False, None)
             result = simple_wave_score(candles)
             if result:
-                return MilkyWaySetup(ticker=ticker, timeframe=req.timeframe, **result)
-            return None
+                return (True, MilkyWaySetup(ticker=ticker, timeframe=req.timeframe, **result))
+            return (True, None)
         except Exception:
-            return None
+            return (False, None)
 
-    # Concurrent batches of 20 — respects Polygon rate limits while scanning all tickers
-    BATCH = 20
-    async with httpx.AsyncClient(timeout=20) as client:
+    # Batch size: smaller for heavy timeframes to avoid Polygon rate limits
+    BATCH = 10 if req.timeframe in ("1h", "4h") else 20
+    DELAY = 0.5 if req.timeframe in ("1h", "4h") else 0.3
+
+    async with httpx.AsyncClient(timeout=25) as client:
         for i in range(0, len(spx_tickers), BATCH):
             batch = spx_tickers[i: i + BATCH]
             results_batch = await asyncio.gather(*[fetch_ticker(client, t) for t in batch])
-            for setup in results_batch:
-                if setup is not None:
+            for had_data, setup in results_batch:
+                if had_data:
                     scanned += 1
+                if setup is not None:
                     setups.append(setup)
-            # Small delay between batches to avoid rate-limit spikes
             if i + BATCH < len(spx_tickers):
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(DELAY)
 
     # Sort by confidence and limit
     setups.sort(key=lambda x: x.confidence, reverse=True)
