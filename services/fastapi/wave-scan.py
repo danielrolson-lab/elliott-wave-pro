@@ -506,8 +506,8 @@ def simple_wave_score(candles: list) -> dict | None:
     lows   = [c["l"] for c in candles]
     vols   = [c.get("v", 0) for c in candles]
 
-    # Adaptive pivot lookback — smaller for resampled/limited bar counts
-    lb = 2 if len(closes) < 30 else 3
+    # Adaptive pivot lookback — tighter for small bar counts
+    lb = 1 if len(closes) < 12 else (2 if len(closes) < 30 else 3)
     pivots = []
     for i in range(lb, len(closes) - lb):
         if all(highs[i] >= highs[j] for j in range(i - lb, i + lb + 1) if j != i):
