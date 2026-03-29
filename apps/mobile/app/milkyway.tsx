@@ -13,6 +13,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMilkyWay } from '../hooks/useMilkyWay';
 import { SetupCard } from '../components/milkyway/SetupCard';
 import { useMarketDataStore } from '../stores/marketData';
+import { useUIStore } from '../stores/ui';
 import type { MilkyWaySetup } from '../stores/milkyway';
 import type { RootTabParamList } from '../navigation/AppNavigator';
 import { DARK } from '../theme/colors';
@@ -40,11 +41,13 @@ function TimeframeContent({ tf }: { tf: Exclude<TimeframeTab, '★'> }) {
   const { result, status, error, refresh } = useMilkyWay(tf);
   const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   const setActiveTicker = useMarketDataStore((s) => s.setActiveTicker);
+  const setActiveTimeframe = useUIStore((s) => s.setActiveTimeframe);
 
   const handlePress = useCallback((setup: MilkyWaySetup) => {
     setActiveTicker(setup.ticker, { ticker: setup.ticker, name: setup.companyName } as any);
+    setActiveTimeframe(setup.timeframe as any);
     navigation.navigate('Chart');
-  }, [navigation, setActiveTicker]);
+  }, [navigation, setActiveTicker, setActiveTimeframe]);
 
   if (status === 'loading' && !result) {
     return (
@@ -95,6 +98,7 @@ function StarContent() {
   const [loading, setLoading] = useState(true);
   const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   const setActiveTicker = useMarketDataStore((s) => s.setActiveTicker);
+  const setActiveTimeframe = useUIStore((s) => s.setActiveTimeframe);
 
   const tf1 = useMilkyWay('5m');
   const tf2 = useMilkyWay('15m');
@@ -121,8 +125,9 @@ function StarContent() {
 
   const handlePress = useCallback((setup: MilkyWaySetup) => {
     setActiveTicker(setup.ticker, { ticker: setup.ticker, name: setup.companyName } as any);
+    setActiveTimeframe(setup.timeframe as any);
     navigation.navigate('Chart');
-  }, [navigation, setActiveTicker]);
+  }, [navigation, setActiveTicker, setActiveTimeframe]);
 
   if (loading && results.length === 0) {
     return (

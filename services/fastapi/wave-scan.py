@@ -645,28 +645,36 @@ async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
     setups: list[MilkyWaySetup] = []
     scanned = 0
 
-    # Process in batches to avoid rate limiting
-    async with httpx.AsyncClient(timeout=15) as client:
-        for ticker in spx_tickers[:100]:  # limit to first 100 for speed
-            try:
-                r = await client.get(
-                    f"{POLYGON_BASE}/v2/aggs/ticker/{ticker}/range/{mult}/{timespan}/{from_str}/{to_str}",
-                    params={"adjusted": "true", "sort": "asc", "limit": bar_count, "apiKey": api_key},
-                )
-                data = r.json()
-                candles = data.get("results", [])
-                if len(candles) < 20:
-                    continue
-                scanned += 1
-                result = simple_wave_score(candles)
-                if result and result["confidence"] >= 0.55:
-                    setups.append(MilkyWaySetup(
-                        ticker=ticker,
-                        timeframe=req.timeframe,
-                        **result,
-                    ))
-            except Exception:
-                continue
+    async def fetch_ticker(client: httpx.AsyncClient, ticker: str) -> MilkyWaySetup | None:
+        try:
+            r = await client.get(
+                f"{POLYGON_BASE}/v2/aggs/ticker/{ticker}/range/{mult}/{timespan}/{from_str}/{to_str}",
+                params={"adjusted": "true", "sort": "asc", "limit": bar_count, "apiKey": api_key},
+            )
+            data = r.json()
+            candles = data.get("results", [])
+            if len(candles) < 20:
+                return None
+            result = simple_wave_score(candles)
+            if result:
+                return MilkyWaySetup(ticker=ticker, timeframe=req.timeframe, **result)
+            return None
+        except Exception:
+            return None
+
+    # Concurrent batches of 20 — respects Polygon rate limits while scanning all tickers
+    BATCH = 20
+    async with httpx.AsyncClient(timeout=20) as client:
+        for i in range(0, len(spx_tickers), BATCH):
+            batch = spx_tickers[i: i + BATCH]
+            results_batch = await asyncio.gather(*[fetch_ticker(client, t) for t in batch])
+            for setup in results_batch:
+                if setup is not None:
+                    scanned += 1
+                    setups.append(setup)
+            # Small delay between batches to avoid rate-limit spikes
+            if i + BATCH < len(spx_tickers):
+                await asyncio.sleep(0.3)
 
     # Sort by confidence and limit
     setups.sort(key=lambda x: x.confidence, reverse=True)
