@@ -506,18 +506,19 @@ def simple_wave_score(candles: list) -> dict | None:
     lows   = [c["l"] for c in candles]
     vols   = [c.get("v", 0) for c in candles]
 
-    # Pivot detection (lookback 3)
+    # Adaptive pivot lookback — smaller for resampled/limited bar counts
+    lb = 2 if len(closes) < 30 else 3
     pivots = []
-    for i in range(3, len(closes) - 3):
-        if all(highs[i] >= highs[j] for j in range(i - 3, i + 4) if j != i):
+    for i in range(lb, len(closes) - lb):
+        if all(highs[i] >= highs[j] for j in range(i - lb, i + lb + 1) if j != i):
             pivots.append({"idx": i, "price": highs[i], "isHigh": True})
-        elif all(lows[i] <= lows[j] for j in range(i - 3, i + 4) if j != i):
+        elif all(lows[i] <= lows[j] for j in range(i - lb, i + lb + 1) if j != i):
             pivots.append({"idx": i, "price": lows[i], "isHigh": False})
 
-    if len(pivots) < 5:
+    if len(pivots) < 4:
         return None
 
-    tail = pivots[-6:] if len(pivots) >= 6 else pivots[-5:]
+    tail = pivots[-6:] if len(pivots) >= 6 else pivots[-(min(len(pivots), 5)):]
     current_price = closes[-1]
     isBullish = tail[-1]["price"] > tail[0]["price"]
 
@@ -656,10 +657,10 @@ async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
     to_date = datetime.utcnow()
     lookback_map = {
         "1m": 3, "5m": 7,
-        "15m": 7,   # fetched as 5m then resampled
-        "30m": 14,  # fetched as 5m then resampled
-        "1h":  20,  # fetched as 5m then resampled
-        "4h":  40,  # fetched as 5m then resampled
+        "15m": 10,  # fetched as 5m then resampled
+        "30m": 21,  # fetched as 5m then resampled (~140 5m bars → 23 30m bars)
+        "1h":  30,  # fetched as 5m then resampled (~200 5m bars → 16 1h bars)
+        "4h":  60,  # fetched as 5m then resampled (~400 5m bars → 8 4h bars)
         "1D": 400, "1W": 730,
     }
     lookback_days = lookback_map.get(req.timeframe, 10)
@@ -684,7 +685,9 @@ async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
             # Resample if needed (15m/30m/1h/4h built from 5m)
             if resample_group > 0 and candles:
                 candles = resample_bars(candles, resample_group)
-            if len(candles) < 20:
+            # Resampled bars may be fewer — accept 12+ for resampled, 20+ for native
+            min_bars = 12 if resample_group > 0 else 20
+            if len(candles) < min_bars:
                 return (False, None)
             result = simple_wave_score(candles)
             if result:
