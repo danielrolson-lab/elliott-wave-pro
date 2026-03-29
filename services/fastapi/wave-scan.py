@@ -587,12 +587,16 @@ def simple_wave_score(candles: list) -> dict | None:
         elif recent_vol > avg_vol * 0.9:
             vol_score = 0.05
 
-    # RSI-14 momentum
-    gains  = [max(0.0, closes[i] - closes[i - 1]) for i in range(-14, 0)]
-    losses = [max(0.0, closes[i - 1] - closes[i]) for i in range(-14, 0)]
-    avg_gain = sum(gains) / 14
-    avg_loss = sum(losses) / 14 if sum(losses) > 0 else 0.0001
-    rsi = 100 - (100 / (1 + avg_gain / avg_loss))
+    # RSI momentum — use available bars (min 2), up to 14
+    rsi_n = min(14, len(closes) - 1)
+    if rsi_n >= 2:
+        gains  = [max(0.0, closes[-rsi_n + i + 1] - closes[-rsi_n + i]) for i in range(rsi_n)]
+        losses = [max(0.0, closes[-rsi_n + i] - closes[-rsi_n + i + 1]) for i in range(rsi_n)]
+        avg_gain = sum(gains) / rsi_n
+        avg_loss = sum(losses) / rsi_n if sum(losses) > 0 else 0.0001
+        rsi = 100 - (100 / (1 + avg_gain / avg_loss))
+    else:
+        rsi = 50.0  # neutral fallback
     mom_score = 0.0
     if isBullish and 40 <= rsi <= 70:
         mom_score = 0.10
