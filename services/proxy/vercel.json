@@ -1,11 +1,12 @@
 {
-  "rewrites": [
-    { "source": "/health",         "destination": "/api/health" },
-    { "source": "/api/wave-count", "destination": "/api/quant-api" },
-    { "source": "/api/scenarios",  "destination": "/api/quant-api" },
-    { "source": "/api/regime",     "destination": "/api/quant-api" },
-    { "source": "/api/gex",        "destination": "/api/quant-api" },
-    { "source": "/api/signals",    "destination": "/api/quant-api" },
-    { "source": "/api/milkyway(.*)", "destination": "/api/milkyway" }
+  "version": 2,
+  "builds": [
+    { "src": "api/*.ts", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/health",              "dest": "/api/health" },
+    { "src": "/api/milkyway(.*)",    "dest": "/api/milkyway" },
+    { "src": "/api/wave-compute(.*)", "dest": "/api/wave-compute" },
+    { "src": "/api/(.*)",            "dest": "/api/$1" }
   ]
 }
