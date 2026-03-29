@@ -498,7 +498,7 @@ _RESAMPLE_MAP = {"15m": 3, "30m": 6, "1h": 12, "4h": 48}
 
 def simple_wave_score(candles: list) -> dict | None:
     """Simplified Elliott Wave scoring for bulk scan."""
-    if len(candles) < 20:
+    if len(candles) < 6:
         return None
 
     closes = [c["c"] for c in candles]
@@ -515,7 +515,7 @@ def simple_wave_score(candles: list) -> dict | None:
         elif all(lows[i] <= lows[j] for j in range(i - lb, i + lb + 1) if j != i):
             pivots.append({"idx": i, "price": lows[i], "isHigh": False})
 
-    if len(pivots) < 4:
+    if len(pivots) < 3:
         return None
 
     tail = pivots[-6:] if len(pivots) >= 6 else pivots[-(min(len(pivots), 5)):]
@@ -602,7 +602,7 @@ def simple_wave_score(candles: list) -> dict | None:
 
     score = min(0.92, max(0.30, round(0.30 + fib_score + vol_score + mom_score, 3)))
 
-    if score < 0.55:
+    if score < 0.45:
         return None
 
     # Targets
@@ -685,8 +685,9 @@ async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
             # Resample if needed (15m/30m/1h/4h built from 5m)
             if resample_group > 0 and candles:
                 candles = resample_bars(candles, resample_group)
-            # Resampled bars may be fewer — accept 12+ for resampled, 20+ for native
-            min_bars = 12 if resample_group > 0 else 20
+            # Resampled bars may be few due to Polygon Starter plan limits
+            # 15m→32 bars, 30m→16, 1h→8 — accept anything usable
+            min_bars = 6 if resample_group > 0 else 20
             if len(candles) < min_bars:
                 return (False, None)
             result = simple_wave_score(candles)
