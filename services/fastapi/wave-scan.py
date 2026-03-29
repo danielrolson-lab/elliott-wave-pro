@@ -409,6 +409,25 @@ import time
 _milkyway_cache: dict = {}
 CACHE_TTL_SECONDS = 900  # 15 minutes
 
+# Hardcoded S&P 500 components — Polygon Stocks Starter doesn't support index filter
+SP500_TICKERS = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "BRK.B", "UNH", "LLY",
+    "JPM", "V", "XOM", "AVGO", "PG", "MA", "COST", "HD", "JNJ", "ABBV",
+    "MRK", "CVX", "BAC", "NFLX", "CRM", "KO", "ORCL", "AMD", "PEP", "TMO",
+    "ADBE", "WMT", "MCD", "CSCO", "INTC", "TXN", "QCOM", "ACN", "DHR", "LIN",
+    "CAT", "INTU", "IBM", "GE", "AMGN", "MS", "GS", "RTX", "VZ", "SPGI",
+    "BLK", "SYK", "T", "PFE", "CB", "TJX", "PLD", "DE", "ISRG", "UPS",
+    "NOW", "GILD", "ADI", "LRCX", "BKNG", "MMC", "CI", "REGN", "BA", "MO",
+    "SO", "DUK", "BMY", "ADP", "HCA", "CME", "MDLZ", "KLAC", "SLB", "MAR",
+    "BDX", "EOG", "ZTS", "ICE", "PNC", "TGT", "USB", "AON", "MCO", "COP",
+    "NOC", "GD", "WM", "FCX", "APD", "EQIX", "PSA", "HLT", "ITW", "CTAS",
+    "MPC", "ORLY", "SHW", "EMR", "PCAR", "DVN", "OKE", "F", "GM", "UBER",
+    "LMT", "NSC", "ETN", "SPG", "WFC", "CCI", "SCHW", "AZO", "MSI", "PAYX",
+    "ANET", "AFL", "ALL", "MET", "PRU", "ECL", "PPG", "IQV", "VRTX", "DXCM",
+    "IDXX", "ROST", "KHC", "MCHP", "CDNS", "SNPS", "FTNT", "CTVA", "NUE", "VMC",
+    "MLM", "FIS", "FANG", "MRO", "APA", "HAL", "BKR", "OXY", "PSX", "VLO",
+]
+
 
 class MilkyWayRequest(BaseModel):
     timeframe: str = "5m"
@@ -464,42 +483,107 @@ def simple_wave_score(candles: list) -> dict | None:
     closes = [c["c"] for c in candles]
     highs  = [c["h"] for c in candles]
     lows   = [c["l"] for c in candles]
+    vols   = [c.get("v", 0) for c in candles]
 
-    # Simple pivot detection
+    # Pivot detection (lookback 3)
     pivots = []
-    for i in range(2, len(closes) - 2):
-        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+    for i in range(3, len(closes) - 3):
+        if all(highs[i] >= highs[j] for j in range(i - 3, i + 4) if j != i):
             pivots.append({"idx": i, "price": highs[i], "isHigh": True})
-        elif lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+        elif all(lows[i] <= lows[j] for j in range(i - 3, i + 4) if j != i):
             pivots.append({"idx": i, "price": lows[i], "isHigh": False})
 
     if len(pivots) < 5:
         return None
 
-    # Use last 6 pivots for wave analysis
     tail = pivots[-6:] if len(pivots) >= 6 else pivots[-5:]
-
     current_price = closes[-1]
     isBullish = tail[-1]["price"] > tail[0]["price"]
 
-    # Simple Fibonacci scoring
+    # Price range over last 20 bars
+    high_20 = max(highs[-20:])
+    low_20  = min(lows[-20:])
+    price_range = high_20 - low_20
+    if price_range <= 0:
+        return None
+
+    # Wave position based on price location in recent range
+    position = (current_price - low_20) / price_range  # 0=at low, 1=at high
+    if isBullish:
+        if position >= 0.80:
+            stage = "Forming W5"
+        elif position >= 0.55:
+            stage = "Forming W3"
+        elif position >= 0.35:
+            stage = "Forming W4"
+        elif position >= 0.15:
+            stage = "Forming W2"
+        else:
+            stage = "Forming W1"
+    else:
+        if position <= 0.20:
+            stage = "Forming W5"
+        elif position <= 0.45:
+            stage = "Forming W3"
+        elif position <= 0.65:
+            stage = "Forming W4"
+        elif position <= 0.85:
+            stage = "Forming W2"
+        else:
+            stage = "Forming W1"
+
+    # Fibonacci scoring
+    fib_score = 0.0
     e3 = 0.0
-    w1_len = 0.0
+    fib_ctx = "Pivots forming"
     if len(tail) >= 5:
         w1_len = abs(tail[1]["price"] - tail[0]["price"])
         w3_len = abs(tail[3]["price"] - tail[2]["price"]) if len(tail) > 3 else 0
+        if w1_len > 0:
+            e3 = w3_len / w1_len
+            fib_ctx = f"W3 ext {e3:.2f}x"
+            if e3 >= 1.618:
+                fib_score = 0.35
+            elif e3 >= 1.0:
+                fib_score = 0.20
+            else:
+                fib_score = 0.05
+            # W2 retracement check
+            if len(tail) >= 3:
+                w2_ret = abs(tail[2]["price"] - tail[1]["price"]) / w1_len
+                if 0.382 <= w2_ret <= 0.786:
+                    fib_score += 0.12
 
-        # Wave 3 should be > wave 1
-        if w3_len > w1_len:
-            e3 = w3_len / w1_len if w1_len > 0 else 0
-            score = min(0.9, 0.5 + (e3 - 1.0) * 0.2)
-        else:
-            score = 0.3
-    else:
-        score = 0.4
+    # Volume: recent vs average
+    vol_score = 0.0
+    if len(vols) >= 20 and sum(vols[-20:]) > 0:
+        avg_vol    = sum(vols[-20:]) / 20
+        recent_vol = sum(vols[-3:]) / 3
+        if recent_vol > avg_vol * 1.3:
+            vol_score = 0.10
+        elif recent_vol > avg_vol * 0.9:
+            vol_score = 0.05
 
-    # Targets based on recent structure
-    price_range = max(highs[-20:]) - min(lows[-20:])
+    # RSI-14 momentum
+    gains  = [max(0.0, closes[i] - closes[i - 1]) for i in range(-14, 0)]
+    losses = [max(0.0, closes[i - 1] - closes[i]) for i in range(-14, 0)]
+    avg_gain = sum(gains) / 14
+    avg_loss = sum(losses) / 14 if sum(losses) > 0 else 0.0001
+    rsi = 100 - (100 / (1 + avg_gain / avg_loss))
+    mom_score = 0.0
+    if isBullish and 40 <= rsi <= 70:
+        mom_score = 0.10
+    elif not isBullish and 30 <= rsi <= 60:
+        mom_score = 0.10
+    elif (isBullish and rsi > 70) or (not isBullish and rsi < 30):
+        mom_score = 0.03  # overbought/oversold — slight credit
+
+    score = min(0.92, max(0.30, round(0.30 + fib_score + vol_score + mom_score, 3)))
+
+    if score < 0.55:
+        return None
+
+    # Targets
     if isBullish:
         t1   = current_price + price_range * 0.382
         t2   = current_price + price_range * 0.618
@@ -513,26 +597,20 @@ def simple_wave_score(candles: list) -> dict | None:
 
     rr = abs(t1 - current_price) / abs(current_price - stop) if abs(current_price - stop) > 0 else 0
 
-    # Wave position
-    stage_map = {0: "Forming W3", 1: "Forming W4", 2: "Forming W5", 3: "Complete"}
-    stage = stage_map.get(len(tail) - 4, "Forming W3")
-
-    fib_ctx = f"W3 ext {e3:.2f}x" if len(tail) >= 5 and w1_len > 0 else "Forming"
-
     return {
-        "direction": "bullish" if isBullish else "bearish",
-        "confidence": round(score, 3),
+        "direction":    "bullish" if isBullish else "bearish",
+        "confidence":   score,
         "currentPrice": round(current_price, 2),
-        "t1": round(t1, 2),
-        "t2": round(t2, 2),
-        "t3": round(t3, 2),
-        "stop": round(stop, 2),
-        "riskReward": round(rr, 2),
+        "t1":           round(t1, 2),
+        "t2":           round(t2, 2),
+        "t3":           round(t3, 2),
+        "stop":         round(stop, 2),
+        "riskReward":   round(rr, 2),
         "wavePosition": f"Wave {stage}",
-        "fibContext": fib_ctx,
-        "degree": "Minor",
-        "rules": "5/8",
-        "mtfAligned": score > 0.7,
+        "fibContext":   fib_ctx,
+        "degree":       "Minor",
+        "rules":        "5/8",
+        "mtfAligned":   score > 0.70,
     }
 
 
@@ -550,28 +628,8 @@ async def milkyway_scan(req: MilkyWayRequest) -> MilkyWayResponse:
     api_key = POLYGON_API_KEY
     mult, timespan, bar_count = get_timeframe_params(req.timeframe)
 
-    # Fetch S&P 500 tickers from Polygon
-    spx_tickers: list[str] = []
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get(
-                f"{POLYGON_BASE}/v3/reference/tickers",
-                params={"market": "stocks", "index": "SPX", "limit": 500, "active": "true", "apiKey": api_key},
-            )
-            data = r.json()
-            spx_tickers = [t["ticker"] for t in data.get("results", [])]
-    except Exception:
-        pass
-
-    # Fallback subset if Polygon index call fails or returns empty
-    if not spx_tickers:
-        spx_tickers = [
-            "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "BRK.B",
-            "JPM", "V", "MA", "UNH", "JNJ", "HD", "PG", "COST", "ABBV", "LLY",
-            "MRK", "CVX", "XOM", "BAC", "PFE", "TMO", "AMD", "INTC", "AVGO", "CSCO",
-            "NFLX", "DIS", "ADBE", "CRM", "ORCL", "ACN", "TXN", "QCOM", "IBM", "GE",
-            "CAT", "BA", "GS", "MS", "BLK", "SPGI", "AXP", "RTX", "HON", "MMM",
-        ]
+    # Use hardcoded S&P 500 list — Polygon Stocks Starter plan does not support index membership filter
+    spx_tickers = SP500_TICKERS
 
     # Compute date range
     to_date = datetime.utcnow()
