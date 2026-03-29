@@ -8,7 +8,7 @@
  * Loading state shows an animated ellipsis; error state shows a muted fallback.
  */
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useWaveCountStore } from '../../stores/waveCount';
 import { useCommentaryStore } from '../../stores/commentary';
@@ -21,6 +21,7 @@ interface Props {
 
 export function ScenarioCommentary({ ticker, timeframe }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const clearError = useCommentaryStore((s) => s.setError);
 
   const primaryCount = useWaveCountStore(
     (s) => (s.counts[`${ticker}_${timeframe}`] ?? [])[0],
@@ -35,6 +36,10 @@ export function ScenarioCommentary({ ticker, timeframe }: Props) {
   const error = useCommentaryStore(
     (s) => (primaryCount ? s.errors[primaryCount.id] : null),
   );
+
+  const handleRetry = useCallback(() => {
+    if (primaryCount) clearError(primaryCount.id, null);
+  }, [primaryCount, clearError]);
 
   if (!primaryCount) return null;
   if (!loading && !commentary && !error) return null;
@@ -57,7 +62,9 @@ export function ScenarioCommentary({ ticker, timeframe }: Props) {
               <Text style={styles.loadingText}>Generating commentary…</Text>
             </View>
           ) : error ? (
-            <Text style={styles.errorText}>Commentary unavailable.</Text>
+            <Pressable onPress={handleRetry} style={styles.errorRow}>
+              <Text style={styles.errorText}>Wave commentary unavailable — tap to retry</Text>
+            </Pressable>
           ) : (
             <Text style={styles.commentaryText}>{commentary}</Text>
           )}
@@ -121,9 +128,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
   },
+  errorRow: {
+    paddingVertical: 4,
+  },
   errorText: {
-    color:    DARK.textMuted,
-    fontSize: 11,
+    color:     '#ef4444',
+    fontSize:  11,
     fontStyle: 'italic',
   },
   commentaryText: {

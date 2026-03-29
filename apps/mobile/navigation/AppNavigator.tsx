@@ -157,7 +157,9 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown:             false,
-        tabBarStyle:             { backgroundColor: theme.surface, borderTopColor: theme.separator, borderTopWidth: 1, height: 56, paddingBottom: 6 },
+        tabBarStyle:             { backgroundColor: theme.surface, borderTopColor: theme.separator, borderTopWidth: 1, height: 64, paddingBottom: 8, paddingTop: 4, overflow: 'hidden' },
+        tabBarLabelStyle:        { fontSize: 9, textAlign: 'center', lineHeight: 11 },
+        tabBarIconStyle:         { marginBottom: 0 },
         tabBarActiveTintColor:   theme.textPrimary,
         tabBarInactiveTintColor: theme.textMuted,
         tabBarIcon: ({ focused }) => (
@@ -171,7 +173,7 @@ function MainTabs() {
       <Tab.Screen name="Watchlist" component={WatchlistScreen} />
       <Tab.Screen name="Chart"     component={ChartNavigator} />
       <Tab.Screen name="Flow"      component={FlowScreen} />
-      <Tab.Screen name="MilkyWay"  component={MilkyWayScreen} options={{ title: 'Milky Way' }} />
+      <Tab.Screen name="MilkyWay"  component={MilkyWayScreen} options={{ title: 'Milky Waves' }} />
       <Tab.Screen name="Settings"  component={SettingsScreen} />
     </Tab.Navigator>
   );

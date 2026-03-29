@@ -37,7 +37,7 @@ function TimestampText({ generatedAt, scanned }: { generatedAt?: string; scanned
 }
 
 function TimeframeContent({ tf }: { tf: Exclude<TimeframeTab, '★'> }) {
-  const { result, status, refresh } = useMilkyWay(tf);
+  const { result, status, error, refresh } = useMilkyWay(tf);
   const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   const setActiveTicker = useMarketDataStore((s) => s.setActiveTicker);
 
@@ -58,9 +58,12 @@ function TimeframeContent({ tf }: { tf: Exclude<TimeframeTab, '★'> }) {
   if (status === 'error') {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>Scan unavailable</Text>
+        <Text style={styles.errorText}>Scanner unavailable</Text>
+        {error ? (
+          <Text style={styles.errorDetail} numberOfLines={2}>{error}</Text>
+        ) : null}
         <Pressable style={styles.retryBtn} onPress={() => refresh()}>
-          <Text style={styles.retryText}>Retry</Text>
+          <Text style={styles.retryText}>Tap to retry</Text>
         </Pressable>
       </View>
     );
@@ -149,7 +152,7 @@ export function MilkyWayScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>🌌 Milky Way Setups</Text>
+        <Text style={styles.title}>🌌 Milky Waves Setups</Text>
         <Text style={styles.subtitle}>Top Elliott Wave setups across S&P 500</Text>
       </View>
 
@@ -194,7 +197,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   scanningText: { color: DARK.textMuted, fontSize: 13, marginTop: 12, textAlign: 'center' },
   emptyText: { color: DARK.textMuted, fontSize: 13, textAlign: 'center' },
-  errorText: { color: '#ef5350', fontSize: 14, marginBottom: 12 },
+  errorText: { color: '#ef5350', fontSize: 14, marginBottom: 4 },
+  errorDetail: { color: DARK.textMuted, fontSize: 11, textAlign: 'center', paddingHorizontal: 24, marginBottom: 12 },
   retryBtn: { backgroundColor: DARK.surface, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: DARK.border },
   retryText: { color: DARK.textSecondary, fontSize: 13, fontWeight: '600' },
   scanMeta: { color: DARK.textMuted, fontSize: 10, textAlign: 'center', paddingVertical: 8 },

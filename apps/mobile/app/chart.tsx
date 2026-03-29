@@ -20,7 +20,6 @@ import { useIndicators }       from '../hooks/useIndicators';
 import { usePolygonCandles }   from '../hooks/usePolygonCandles';
 import { useGEXLevels }          from '../hooks/useGEXLevels';
 import { useRegimeClassifier }   from '../hooks/useRegimeClassifier';
-import { useL2WebSocket }        from '../hooks/useL2WebSocket';
 import { useCVD }               from '../hooks/useCVD';
 import { useScenarioCommentary } from '../hooks/useScenarioCommentary';
 import { useMarketDataStore }    from '../stores/marketData';
@@ -28,8 +27,6 @@ import { useGEXStore }         from '../stores/gex';
 import { useWaveCountStore }   from '../stores/waveCount';
 import { useWaveAlerts }       from '../hooks/useWaveAlerts';
 import { ScenarioPanel }       from '../components/scenarios/ScenarioPanel';
-import { DepthLadder }         from '../components/l2/DepthLadder';
-import { TimeAndSales }        from '../components/l2/TimeAndSales';
 import { DecayMeter }          from '../components/chart/DecayMeter';
 import { VoiceCommandHandler } from '../components/voice/VoiceCommandHandler';
 import { LayerTogglePanel }  from '../components/chart/LayerTogglePanel';
@@ -51,8 +48,6 @@ const IPAD_MIN_WIDTH = 768;
 
 export function ChartScreen() {
   const [timeframe,    setTimeframe]    = useState<TimeframeOption>('5m');
-  const [showL2,       setShowL2]       = useState(false);
-  const [l2Tab,        setL2Tab]        = useState<'depth' | 'tape'>('depth');
   const [compareMode,     setCompareMode]     = useState(false);
   const [showPlaybook,    setShowPlaybook]    = useState(false);
   const [showTickerPicker, setShowTickerPicker] = useState(false);
@@ -80,7 +75,6 @@ export function ChartScreen() {
   useIndicators(ACTIVE_TICKER, timeframe, candles);
   useGEXLevels(ACTIVE_TICKER);
   useRegimeClassifier(ACTIVE_TICKER, timeframe, candles);
-  useL2WebSocket(ACTIVE_TICKER);
   useCVD(ACTIVE_TICKER, timeframe, candles);
   useScenarioCommentary(ACTIVE_TICKER, timeframe);
   useSentiment(ACTIVE_TICKER);
@@ -168,52 +162,23 @@ export function ChartScreen() {
 
         {candles.length > 0 && (
           <>
-            <View style={styles.chartRow}>
-              <View ref={chartViewRef} style={styles.chartMain}>
-                <CandlestickChart
-                  candles={candles}
-                  overlays={overlays}
-                  ticker={ACTIVE_TICKER}
-                  waveCounts={waveCounts}
-                  waveSliceOffset={sliceOffset}
-                  gexLevels={gexLevels}
-                  activeStopPrice={activeStopPrice}
-                  externalTranslateX={translateX}
-                  externalCandleW={candleW}
-                />
-              </View>
-              {showL2 && (
-                <View style={styles.l2Panel}>
-                  <View style={styles.l2TabBar}>
-                    <Pressable
-                      style={[styles.l2TabBtn, l2Tab === 'depth' && styles.l2TabActive]}
-                      onPress={() => setL2Tab('depth')}
-                    >
-                      <Text style={[styles.l2TabText, l2Tab === 'depth' && styles.l2TabTextActive]}>
-                        DEPTH
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.l2TabBtn, l2Tab === 'tape' && styles.l2TabActive]}
-                      onPress={() => setL2Tab('tape')}
-                    >
-                      <Text style={[styles.l2TabText, l2Tab === 'tape' && styles.l2TabTextActive]}>
-                        TAPE
-                      </Text>
-                    </Pressable>
-                  </View>
-                  {l2Tab === 'depth' ? (
-                    <DepthLadder ticker={ACTIVE_TICKER} />
-                  ) : (
-                    <TimeAndSales />
-                  )}
+            <View style={styles.chartRow} ref={chartViewRef}>
+              <CandlestickChart
+                candles={candles}
+                overlays={overlays}
+                ticker={ACTIVE_TICKER}
+                waveCounts={waveCounts}
+                waveSliceOffset={sliceOffset}
+                gexLevels={gexLevels}
+                activeStopPrice={activeStopPrice}
+                externalTranslateX={translateX}
+                externalCandleW={candleW}
+              />
+              {waveCounts.length === 0 && candles.length > 0 && (
+                <View style={styles.analyzingOverlay} pointerEvents="none">
+                  <Text style={styles.analyzingText}>Analyzing…</Text>
                 </View>
               )}
-            </View>
-            <View style={styles.l2Toggle}>
-              <Pressable style={styles.l2ToggleBtn} onPress={() => setShowL2((v) => !v)}>
-                <Text style={styles.l2ToggleText}>{showL2 ? '▶ Hide L2' : '◀ Show L2'}</Text>
-              </Pressable>
             </View>
             <DecayMeter ticker={ACTIVE_TICKER} candles={candles} />
             <DataDelayFooter ticker={ACTIVE_TICKER} timeframe={timeframe} />
@@ -223,7 +188,6 @@ export function ChartScreen() {
               candles={candles}
               translateX={translateX}
               candleW={candleW}
-              font={null}
               visiblePages={{
                 rsi:    layers.showRSI,
                 macd:   layers.showMACD,
@@ -231,7 +195,7 @@ export function ChartScreen() {
                 cvd:    layers.showCVD,
               }}
             />
-            <ScrollView style={styles.bottomScroll} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.bottomScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
               <EarningsCountdownBadge ticker={ACTIVE_TICKER} onPress={() => setShowPlaybook(true)} />
               <ScenarioPanel ticker={ACTIVE_TICKER} timeframe={timeframe} />
               <SentimentOverlay ticker={ACTIVE_TICKER} timeframe={timeframe} />
@@ -318,53 +282,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // L2 side-panel layout
-  chartRow:  { flex: 1, flexDirection: 'row' },
-  chartMain: { flex: 1 },
-  l2Panel: {
-    width:           160,
-    backgroundColor: DARK.background,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: DARK.separator,
-  },
-  l2TabBar: {
-    flexDirection:    'row',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: DARK.separator,
-  },
-  l2TabBtn: {
-    flex:           1,
-    paddingVertical: 5,
-    alignItems:     'center',
-  },
-  l2TabActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#3b82f6',
-  },
-  l2TabText: {
-    color:     DARK.textMuted,
-    fontSize:  9,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  l2TabTextActive: { color: DARK.textPrimary },
-
-  l2Toggle: {
-    alignItems: 'flex-end',
+  chartRow:  { flex: 1 },
+  analyzingOverlay: {
+    position:       'absolute',
+    top:            8,
+    right:          64,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius:   4,
     paddingHorizontal: 8,
-    paddingVertical:   2,
+    paddingVertical: 3,
   },
-  l2ToggleBtn: {
-    paddingHorizontal: 8,
-    paddingVertical:   3,
-    backgroundColor:   DARK.surface,
-    borderRadius:      4,
-    borderWidth:       StyleSheet.hairlineWidth,
-    borderColor:       DARK.border,
-  },
-  l2ToggleText: {
-    color:    DARK.textMuted,
-    fontSize: 9,
+  analyzingText: {
+    color:    CHART_COLORS.textMuted,
+    fontSize: 10,
     fontWeight: '600',
   },
   loadingOverlay: {
@@ -384,7 +314,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   bottomScroll: {
-    maxHeight: 280,
+    maxHeight: 420,
   },
   shareBtn: {
     paddingHorizontal: 8,

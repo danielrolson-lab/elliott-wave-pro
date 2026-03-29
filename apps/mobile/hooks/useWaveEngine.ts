@@ -162,13 +162,21 @@ function mapV3CandidateToWaveCount(
     subwaves: [],
   };
 
-  // Targets
+  // Targets — use engine-supplied zone if present; else compute Fibonacci extensions
   const tz = candidate.targetZone;
-  const targets: [number, number, number] = [
-    tz?.[0] ?? 0,
-    tz?.[1] ?? 0,
-    0,
-  ];
+  let t1 = tz?.[0] ?? 0;
+  let t2 = tz?.[1] ?? 0;
+  let t3 = 0;
+  if (t1 === 0 && pivots.length >= 2) {
+    const waveOrigin = pivots[0].price;
+    const lastPivot  = pivots[pivots.length - 1].price;
+    const waveLen    = Math.abs(lastPivot - waveOrigin);
+    const dir        = candidate.isBullish ? 1 : -1;
+    t1 = lastPivot + dir * waveLen * 1.0;
+    t2 = lastPivot + dir * waveLen * 1.618;
+    t3 = lastPivot + dir * waveLen * 2.618;
+  }
+  const targets: [number, number, number] = [t1, t2, t3];
 
   const stopPrice = candidate.invalidation ?? 0;
 
@@ -245,12 +253,14 @@ export function useWaveEngine(
   const prevLen = useRef(0);
   const v3EngineStateRef = useRef<V3EngineState>({});
 
-  // Reset on ticker/timeframe change
+  // Reset on ticker/timeframe change — clear both local state and the store
+  // so CandlestickChart immediately removes stale overlays from the prior timeframe.
   useEffect(() => {
     prevLen.current = 0;
     v3EngineStateRef.current = {};
     setResult({ waveCounts: EMPTY, sliceOffset: 0 });
-  }, [ticker, timeframe]);
+    setCounts(`${ticker}_${timeframe}`, []);
+  }, [ticker, timeframe, setCounts]);
 
   useEffect(() => {
     if (candles.length < 20) return;

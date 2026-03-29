@@ -1,5 +1,5 @@
 /**
- * services/proxy/ai-commentary.ts — Vercel Edge Function
+ * services/proxy/api/ai-commentary.ts — Vercel Serverless Function
  *
  * POST /api/ai-commentary
  *
@@ -8,53 +8,41 @@
  *
  * The ANTHROPIC_API_KEY environment variable is server-side only — never
  * exposed in the client bundle.
- *
- * Request body:
- *   { ticker, waveLabel, structure, probability, fibLevels, regime,
- *     nextTarget, invalidation, price, gexLevel }
- *
- * Response:
- *   { commentary: string }
  */
 
-export const config = { runtime: 'edge' };
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 interface CommentaryRequest {
-  ticker:       string;
-  waveLabel:    string;
-  structure:    string;
-  probability:  number;
-  fibLevels?:   { label: string; price: number }[];
-  regime?:      string;
-  nextTarget?:  number | null;
+  ticker:        string;
+  waveLabel:     string;
+  structure:     string;
+  probability:   number;
+  fibLevels?:    { label: string; price: number }[];
+  regime?:       string;
+  nextTarget?:   number | null;
   invalidation?: number | null;
-  price?:       number | null;
-  gexLevel?:    string | null;
+  price?:        number | null;
+  gexLevel?:     string | null;
 }
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405 });
-  }
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   const apiKey = process.env['ANTHROPIC_API_KEY'];
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'AI commentary not configured' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(503).json({ error: 'AI commentary not configured' });
   }
 
-  let body: CommentaryRequest;
-  try {
-    body = await req.json() as CommentaryRequest;
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  const body = req.body as CommentaryRequest;
+  if (!body || !body.ticker) {
+    return res.status(400).json({ error: 'Invalid request body' });
   }
 
   const {
@@ -97,34 +85,21 @@ Be concise, specific, and avoid generic disclaimers. Write in present tense.`;
       body: JSON.stringify({
         model:      'claude-sonnet-4-20250514',
         max_tokens: 256,
-        messages: [{ role: 'user', content: prompt }],
+        messages:   [{ role: 'user', content: prompt }],
       }),
     });
 
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
-      return new Response(
-        JSON.stringify({ error: 'Anthropic API error', detail: errText }),
-        { status: 502, headers: { 'Content-Type': 'application/json' } },
-      );
+      return res.status(502).json({ error: 'Anthropic API error', detail: errText });
     }
 
     interface AnthropicContent { type: string; text: string }
     interface AnthropicResponse { content: AnthropicContent[] }
     const data = await anthropicRes.json() as AnthropicResponse;
     const commentary = data.content?.[0]?.text?.trim() ?? '';
-
-    return new Response(JSON.stringify({ commentary }), {
-      status: 200,
-      headers: {
-        'Content-Type':                'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    return res.status(200).json({ commentary });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: 'Internal error', detail: String(err) }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
-    );
+    return res.status(500).json({ error: 'Internal error', detail: String(err) });
   }
 }

@@ -32,8 +32,8 @@ import { useIndicatorStore } from '../../stores/indicators';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const SECONDARY_OPACITY = 0.35;
-const BAR_TRACK_W       = 80;
+const INACTIVE_OPACITY = 0.5;
+const BAR_TRACK_W      = 80;
 const SPRING_CONFIG     = { damping: 14, stiffness: 100 } as const;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -273,7 +273,7 @@ interface ScenarioCardProps {
 
 export function ScenarioCard({
   count,
-  rank,
+  rank: _rank,
   isExpanded,
   currentPrice,
   onPress,
@@ -288,7 +288,6 @@ export function ScenarioCard({
 
   const probability  = count.posterior.posterior;
   const verdict      = getVerdict(count);
-  const opacity      = rank === 0 ? 1.0 : SECONDARY_OPACITY;
   const degreeColor  = DEGREE_COLORS[count.degree] ?? '#8b949e';
   const degreeFull   = DEGREE_FULL[count.degree] ?? count.degree;
   const formattedLbl = formatDegreeLabel(count.degree, count.currentWave.label);
@@ -351,7 +350,7 @@ export function ScenarioCard({
   const ci = count.posterior.confidence_interval;
 
   return (
-    <Pressable onPress={onPress} style={[styles.card, rank === 0 && styles.cardPrimary, { opacity }]}>
+    <Pressable onPress={onPress} style={[styles.card, isExpanded ? styles.cardActive : styles.cardInactive, { opacity: isExpanded ? 1.0 : INACTIVE_OPACITY }]}>
 
       {/* ── Row 1: header ── */}
       <View style={styles.row}>
@@ -474,17 +473,21 @@ export function ScenarioCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor:   DARK.surface,
     borderWidth:       1,
-    borderColor:       DARK.border,
     borderRadius:      6,
     paddingHorizontal: 10,
     paddingVertical:   6,
     marginBottom:      4,
     gap:               4,
   },
-  cardPrimary: {
-    borderColor: '#1d4ed8',
+  cardActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    borderColor:     '#3B82F6',
+    borderWidth:     1.5,
+  },
+  cardInactive: {
+    backgroundColor: DARK.surface,
+    borderColor:     DARK.border,
   },
   row: {
     flexDirection: 'row',

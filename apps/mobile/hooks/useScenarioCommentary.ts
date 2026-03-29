@@ -74,12 +74,15 @@ export function useScenarioCommentary(ticker: string, timeframe: string) {
           gexLevel,
         };
 
-        const res = await fetch(AI_COMMENTARY_URL, {
+        const fetchOnce = () => fetch(AI_COMMENTARY_URL, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify(payload),
         });
 
+        let res = await fetchOnce();
+        // Retry once on server error / network hiccup
+        if (!res.ok && res.status >= 500) res = await fetchOnce();
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         interface CommentaryResponse { commentary: string }

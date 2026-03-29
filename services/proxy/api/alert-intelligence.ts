@@ -1,54 +1,49 @@
 /**
- * services/proxy/alert-intelligence.ts — Vercel Edge Function
+ * services/proxy/api/alert-intelligence.ts — Vercel Serverless Function
  *
  * POST /api/alert-intelligence
  *
  * Generates a one-sentence AI interpretation of an alert trigger.
  * ANTHROPIC_API_KEY is server-side only.
- *
- * Request body:
- *   { ticker, alertType, triggerPrice, currentPrice, waveLabel,
- *     waveStructure, regime, gexLevel, probability, alertNote? }
- *
- * Response:
- *   { interpretation: string }
  */
 
-export const config = { runtime: 'edge' };
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 interface AlertIntelligenceRequest {
-  ticker:        string;
-  alertType:     string;  // 'price_cross' | 'wave_flip' | 'gex_change' | etc.
-  triggerPrice:  number;
-  currentPrice?: number | null;
-  waveLabel?:    string | null;
+  ticker:         string;
+  alertType:      string;
+  triggerPrice:   number;
+  currentPrice?:  number | null;
+  waveLabel?:     string | null;
   waveStructure?: string | null;
-  regime?:       string | null;
-  gexLevel?:     string | null;
-  probability?:  number | null;
-  alertNote?:    string | null;
+  regime?:        string | null;
+  gexLevel?:      string | null;
+  probability?:   number | null;
+  alertNote?:     string | null;
 }
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405 });
-  }
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   const apiKey = process.env['ANTHROPIC_API_KEY'];
   if (!apiKey) {
-    return new Response(
-      JSON.stringify({ interpretation: 'Alert triggered.' }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    );
+    // Graceful fallback: return a plain description without AI
+    const b = req.body as AlertIntelligenceRequest;
+    return res.status(200).json({
+      interpretation: `${b?.ticker ?? 'Alert'} triggered at $${b?.triggerPrice?.toFixed(2) ?? '—'}.`,
+    });
   }
 
-  let body: AlertIntelligenceRequest;
-  try {
-    body = await req.json() as AlertIntelligenceRequest;
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 });
+  const body = req.body as AlertIntelligenceRequest;
+  if (!body || !body.ticker) {
+    return res.status(400).json({ error: 'Invalid request body' });
   }
 
   const {
@@ -87,28 +82,21 @@ Write one specific, actionable sentence explaining the significance of this aler
     });
 
     if (!anthropicRes.ok) {
-      return new Response(
-        JSON.stringify({ interpretation: `${ticker} alert triggered at $${triggerPrice.toFixed(2)}.` }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
+      return res.status(200).json({
+        interpretation: `${ticker} alert triggered at $${triggerPrice.toFixed(2)}.`,
+      });
     }
 
     interface AnthropicContent { type: string; text: string }
     interface AnthropicResponse { content: AnthropicContent[] }
-    const data       = await anthropicRes.json() as AnthropicResponse;
-    const interpretation = data.content?.[0]?.text?.trim() ?? `Alert triggered at $${triggerPrice.toFixed(2)}.`;
+    const data           = await anthropicRes.json() as AnthropicResponse;
+    const interpretation = data.content?.[0]?.text?.trim()
+      ?? `${ticker} alert triggered at $${triggerPrice.toFixed(2)}.`;
 
-    return new Response(JSON.stringify({ interpretation }), {
-      status: 200,
-      headers: {
-        'Content-Type':                'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    return res.status(200).json({ interpretation });
   } catch {
-    return new Response(
-      JSON.stringify({ interpretation: `${ticker} alert triggered at $${triggerPrice.toFixed(2)}.` }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    );
+    return res.status(200).json({
+      interpretation: `${ticker} alert triggered at $${triggerPrice.toFixed(2)}.`,
+    });
   }
 }
