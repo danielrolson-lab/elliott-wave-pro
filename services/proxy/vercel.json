@@ -1,12 +1,9 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/*.ts", "use": "@vercel/node" }
-  ],
   "routes": [
-    { "src": "/health",              "dest": "/api/health" },
-    { "src": "/api/milkyway(.*)",    "dest": "/api/milkyway" },
+    { "src": "/health",               "dest": "/api/health" },
+    { "src": "/api/milkyway(.*)",     "dest": "/api/milkyway" },
     { "src": "/api/wave-compute(.*)", "dest": "/api/wave-compute" },
-    { "src": "/api/(.*)",            "dest": "/api/$1" }
+    { "src": "/api/(.*)",             "dest": "/api/$1" }
   ]
 }
