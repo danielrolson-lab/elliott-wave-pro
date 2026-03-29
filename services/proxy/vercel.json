@@ -1,5 +1,8 @@
 {
   "version": 2,
+  "builds": [
+    { "src": "api/*.ts", "use": "@vercel/node" }
+  ],
   "routes": [
     { "src": "/health",               "dest": "/api/health" },
     { "src": "/api/milkyway(.*)",     "dest": "/api/milkyway" },
