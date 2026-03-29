@@ -1,8 +1,6 @@
-export const config = { runtime: 'edge' };
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export default function handler(): Response {
-  return new Response(
-    JSON.stringify({ status: 'ok', service: 'elliott-wave-pro-proxy', ts: Date.now() }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
-  );
+export default function handler(_req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.status(200).json({ status: 'ok', service: 'elliott-wave-pro-proxy', ts: Date.now() });
 }
