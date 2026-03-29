@@ -576,11 +576,12 @@ def simple_wave_score(candles: list) -> dict | None:
                 if 0.382 <= w2_ret <= 0.786:
                     fib_score += 0.12
 
-    # Volume: recent vs average
+    # Volume: recent vs average (use whatever bars are available, min 4)
     vol_score = 0.0
-    if len(vols) >= 20 and sum(vols[-20:]) > 0:
-        avg_vol    = sum(vols[-20:]) / 20
-        recent_vol = sum(vols[-3:]) / 3
+    if len(vols) >= 4 and sum(vols) > 0:
+        window     = min(20, len(vols))
+        avg_vol    = sum(vols[-window:]) / window
+        recent_vol = sum(vols[-min(3, len(vols)):]) / min(3, len(vols))
         if recent_vol > avg_vol * 1.3:
             vol_score = 0.10
         elif recent_vol > avg_vol * 0.9:
