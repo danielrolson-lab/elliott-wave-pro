@@ -140,7 +140,8 @@ async function fetchIndexSnapshots(): Promise<Record<string, SnapshotQuote>> {
     const out: Record<string, SnapshotQuote> = {};
     for (const t of json.tickers ?? []) {
       // Priority: last trade > today's close > previous close
-      const price = t.lastTrade?.p ?? t.day?.c ?? t.prevDay?.c ?? 0;
+      // Use || not ?? so that zero values (closed market) fall through to prevDay
+      const price = t.lastTrade?.p || t.day?.c || t.prevDay?.c || 0;
       const change = t.todaysChangePerc ?? 0;
       console.log(`[HomeScreen] ${t.ticker}: price=${price} change=${change}`);
       if (price > 0) out[t.ticker] = { price, change };
@@ -256,7 +257,7 @@ export function HomeScreen() {
           {MACRO_ITEMS.map(({ label, suffix }) => (
             <View key={label} style={[styles.stripCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.stripTicker, { color: theme.textMuted }]}>{label}</Text>
-              {/* TODO: REPLACE WITH LIVE DATA */}
+              {/* Requires Polygon Indices Starter plan — shows — until subscribed */}
               <Text style={[styles.stripPrice, { color: theme.textPrimary }]}>—{suffix}</Text>
               <Text style={[styles.stripChange, { color: theme.textMuted }]}>—</Text>
             </View>

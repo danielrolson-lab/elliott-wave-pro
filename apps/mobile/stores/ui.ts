@@ -25,6 +25,9 @@ export interface OverlayConfig {
   ichimoku: boolean;
   vpvr: boolean;
   elliottWaveLabels: boolean;
+  showEWChannel:    boolean;   // independent toggle for channel lines
+  showInvalidation: boolean;   // invalidation price line
+  showWaveLabels:   boolean;   // wave number labels on pivots
   fibRetracements: boolean;
   fibExtensions: boolean;
   fibTimeZones: boolean;
@@ -93,6 +96,9 @@ const DEFAULT_OVERLAYS: OverlayConfig = {
   ichimoku: false,
   vpvr: true,
   elliottWaveLabels: true,
+  showEWChannel:    false,
+  showInvalidation: true,
+  showWaveLabels:   true,
   fibRetracements: true,
   fibExtensions: true,
   fibTimeZones: false,

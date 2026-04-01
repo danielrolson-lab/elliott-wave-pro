@@ -25,6 +25,7 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, { LinearTransition } from 'react-native-reanimated';
 import { useShallow } from 'zustand/react/shallow';
+import type { WaveCount } from '@elliott-wave-pro/wave-engine';
 import { useWaveCountStore } from '../../stores/waveCount';
 import { useMarketDataStore } from '../../stores/marketData';
 import { ScenarioCard } from './ScenarioCard';
@@ -44,12 +45,29 @@ const CALIBRATION_NOTE =
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export interface ScenarioPanelProps {
-  ticker:    string;
-  timeframe: string;
+// ── HTF context helpers ───────────────────────────────────────────────────────
+
+function getHtfContextLine(htfWaveCounts: readonly WaveCount[]): string | null {
+  if (!htfWaveCounts.length) return null;
+  const htf = htfWaveCounts[0];
+  if (!htf?.currentWave) return null;
+  const label = htf.currentWave.label;
+  const tf    = htf.timeframe;
+  const isImpulse = htf.currentWave.structure?.toLowerCase().includes('impulse') ?? true;
+  const typeStr   = isImpulse ? 'impulse' : 'correction';
+  return `↑ Fits within: ${tf} Wave ${label} (${typeStr})`;
 }
 
-export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export interface ScenarioPanelProps {
+  ticker:         string;
+  timeframe:      string;
+  ewMode?:        string;
+  htfWaveCounts?: readonly WaveCount[];
+}
+
+export function ScenarioPanel({ ticker, timeframe, ewMode, htfWaveCounts = [] }: ScenarioPanelProps) {
   const counts = useWaveCountStore(
     useShallow((s) => s.counts[`${ticker}_${timeframe}`] ?? []),
   );
@@ -59,6 +77,10 @@ export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
 
   const [showInfo,    setShowInfo]    = useState(false);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
+
+  const htfContextLine = ewMode === 'multi-degree'
+    ? getHtfContextLine(htfWaveCounts)
+    : null;
 
   if (counts.length === 0) {
     return (
@@ -107,6 +129,7 @@ export function ScenarioPanel({ ticker, timeframe }: ScenarioPanelProps) {
               rank={index}
               isExpanded={isExpanded}
               currentPrice={currentPrice}
+              htfContextLine={htfContextLine}
               onPress={() => {
                 setExpandedId(count.id === expandedId ? null : count.id);
                 pinCount(`${ticker}_${timeframe}`, count.id);

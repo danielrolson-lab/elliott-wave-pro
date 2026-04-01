@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import type { WaveCount } from '@elliott-wave-pro/wave-engine';
 import { useWaveCountStore } from '../stores/waveCount';
 import { useMarketDataStore } from '../stores/marketData';
 import { useGEXStore } from '../stores/gex';
@@ -20,7 +21,12 @@ const AI_COMMENTARY_URL =
 const PROB_DELTA_THRESHOLD = 0.05;
 const DEBOUNCE_MS          = 2000;
 
-export function useScenarioCommentary(ticker: string, timeframe: string) {
+export function useScenarioCommentary(
+  ticker:        string,
+  timeframe:     string,
+  ewMode?:       string,
+  htfWaveCounts?: readonly WaveCount[],
+) {
   const counts   = useWaveCountStore((s) => s.counts[`${ticker}_${timeframe}`] ?? []);
   const quote    = useMarketDataStore((s) => s.quotes[ticker]);
   const gexStore = useGEXStore((s) => s.levels[ticker]);
@@ -61,17 +67,36 @@ export function useScenarioCommentary(ticker: string, timeframe: string) {
           ? (gexStore.zeroGex ? `Zero GEX at $${gexStore.zeroGex.toFixed(2)}` : null)
           : null;
 
+        const altCount = counts[1];
+        const w1 = primaryCount.allWaves?.[0];
+        const waveStart = w1?.startPivot?.price ?? null;
+
+        const htfPrimary  = htfWaveCounts?.[0];
+        const htfLabel    = htfPrimary?.currentWave?.label ?? null;
+        const htfTF       = htfPrimary?.timeframe ?? null;
+        const htfStructure = htfPrimary?.currentWave?.structure ?? null;
+
         const payload = {
           ticker,
-          waveLabel:   String(primaryCount.currentWave?.label ?? '?'),
-          structure:   primaryCount.currentWave?.structure ?? '',
-          probability: currentProb,
+          waveLabel:    String(primaryCount.currentWave?.label ?? '?'),
+          structure:    primaryCount.currentWave?.structure ?? '',
+          probability:  currentProb,
           fibLevels,
-          regime:      regime ?? null,
-          nextTarget:  primaryCount.targets?.[0] ?? null,
+          regime:       regime ?? null,
+          nextTarget:   primaryCount.targets?.[0] ?? null,
+          t2:           primaryCount.targets?.[1] ?? null,
+          t3:           primaryCount.targets?.[2] ?? null,
           invalidation: primaryCount.stopPrice ?? null,
-          price:       quote?.last ?? null,
+          price:        quote?.last ?? null,
           gexLevel,
+          altWaveLabel:  altCount ? String(altCount.currentWave?.label ?? '?') : null,
+          altConfidence: altCount?.posterior?.posterior ?? null,
+          waveType:      (primaryCount as unknown as { type?: string }).type ?? null,
+          waveStart,
+          ewMode:        ewMode ?? 'now',
+          htfLabel,
+          htfTF,
+          htfStructure,
         };
 
         const fetchOnce = () => fetch(AI_COMMENTARY_URL, {

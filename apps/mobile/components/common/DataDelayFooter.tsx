@@ -1,19 +1,22 @@
 /**
  * components/common/DataDelayFooter.tsx
  *
- * Shows the timestamp of the most recent candle (or fallback quote),
- * an estimated delay in minutes, and the data source tier.
+ * Shows when watchlist prices were last fetched and the Polygon Starter delay.
  *
- * Usage:
- *   <DataDelayFooter ticker="SPY" timeframe="5m" />
+ * Reads `lastIntradayAt` (Unix ms) from the watchlist store — stamped by
+ * useWatchlistPrices every time applyIntradayUpdate succeeds. This avoids
+ * reading candle timestamps, which can be stale if usePolygonCandles (chart
+ * backfill) wrote an early-morning snapshot to the same store key.
  *
- * When no candles are available, falls back to a generic "15 min delay" label.
+ * Displayed time = lastIntradayAt − 15 min (the Polygon Stocks Starter delay).
+ * Falls back to "~15 min delay" while the first fetch is in-flight.
  */
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Text, View, StyleSheet } from 'react-native';
-import { useMarketDataStore } from '../../stores/marketData';
+import { useWatchlistStore } from '../../stores/watchlist';
 
+// Props kept for call-site compatibility; ticker/timeframe no longer used here.
 interface Props {
   ticker:    string;
   timeframe: string;
@@ -28,28 +31,33 @@ function formatET(ts: number): string {
   });
 }
 
-export function DataDelayFooter({ ticker, timeframe }: Props) {
-  const candles = useMarketDataStore((s) => s.candles[`${ticker}_${timeframe}`]);
+export function DataDelayFooter(_props: Props) {
+  const lastIntradayAt = useWatchlistStore((s) => s.lastIntradayAt);
 
-  const { timeLabel, delayMins } = useMemo(() => {
-    if (!candles || candles.length === 0) {
-      return { timeLabel: null, delayMins: 15 };
-    }
-    const last = candles[candles.length - 1];
-    const now  = Date.now();
-    const mins = Math.round((now - last.timestamp) / 60_000);
-    return {
-      timeLabel: formatET(last.timestamp),
-      delayMins: Math.max(mins, 0),
-    };
-  }, [candles]);
+  // Re-render every 60 s so the "X min ago" counter stays fresh.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  let label: string;
+  if (lastIntradayAt === 0) {
+    label = '~15 min delay · Polygon Stocks Starter';
+  } else {
+    // Polygon Starter data is 15 min delayed — the bar we just fetched
+    // represents market data from ~15 min before the fetch time.
+    const dataAsOf  = lastIntradayAt - 15 * 60_000;
+    const fetchedMs = Date.now() - lastIntradayAt;
+    const fetchedMin = Math.round(fetchedMs / 60_000);
+    const timeStr   = formatET(dataAsOf);
+    const fetchedStr = fetchedMin <= 1 ? 'just now' : `${fetchedMin} min ago`;
+    label = `Data as of ${timeStr} ET · refreshed ${fetchedStr} · Polygon Stocks Starter`;
+  }
 
   return (
     <View style={styles.row}>
-      <Text style={styles.text}>
-        {timeLabel ? `Last candle: ${timeLabel} ET · ` : ''}
-        {delayMins} min delay · Polygon Stocks Starter
-      </Text>
+      <Text style={styles.text}>{label}</Text>
     </View>
   );
 }

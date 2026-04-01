@@ -13,6 +13,7 @@
 
 import React, { useEffect } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
+import { SkiaErrorBoundary } from '../common/SkiaErrorBoundary';
 import {
   Canvas,
   Path,
@@ -250,6 +251,7 @@ export function MACDIndicator({
   });
 
   return (
+    <SkiaErrorBoundary name="MACDIndicator" height={INDICATOR_H}>
     <Canvas style={[styles.canvas, { width: screenW, height: INDICATOR_H }]}>
       <Rect x={0} y={0} width={screenW} height={INDICATOR_H} color={CHART_COLORS.background} />
 
@@ -291,6 +293,7 @@ export function MACDIndicator({
         <Text x={CHART_W + 4} y={PAD_TOP + 10} text={currentLabel} font={font} color={CHART_COLORS.textMuted} />
       )}
     </Canvas>
+    </SkiaErrorBoundary>
   );
 }
 

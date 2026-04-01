@@ -25,6 +25,8 @@ export interface WatchlistState {
   activeTab: WatchlistTab;
   sortKey: SortKey;
   selectedIds: Set<string>;
+  /** Unix ms of the last successful intraday price fetch (used by DataDelayFooter) */
+  lastIntradayAt: number;
 
   // Actions
   addItem: (instrument: Instrument) => void;
@@ -35,6 +37,7 @@ export interface WatchlistState {
   setSortKey: (key: SortKey) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
+  setLastIntradayAt: (t: number) => void;
 }
 
 export const useWatchlistStore = create<WatchlistState>()(
@@ -43,6 +46,7 @@ export const useWatchlistStore = create<WatchlistState>()(
     activeTab: 'all',
     sortKey: 'change_pct',
     selectedIds: new Set(),
+    lastIntradayAt: 0,
 
     addItem: (instrument) =>
       set((state) => {
@@ -105,6 +109,11 @@ export const useWatchlistStore = create<WatchlistState>()(
     clearSelection: () =>
       set((state) => {
         state.selectedIds.clear();
+      }),
+
+    setLastIntradayAt: (t) =>
+      set((state) => {
+        state.lastIntradayAt = t;
       }),
   })),
 );

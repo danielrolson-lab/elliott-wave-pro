@@ -20,8 +20,9 @@
  * block the JS thread during pan / pinch.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { SkiaErrorBoundary } from '../common/SkiaErrorBoundary';
 import {
   Canvas,
   Path,
@@ -36,6 +37,7 @@ import {
 import {
   useSharedValue,
   useDerivedValue,
+  useAnimatedReaction,
   clamp,
   runOnJS,
 } from 'react-native-reanimated';
@@ -44,14 +46,27 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { OHLCV, WaveCount } from '@elliott-wave-pro/wave-engine';
 import type { OverlayConfig } from '../../stores/ui';
 import { CHART_COLORS, CHART_LAYOUT } from './chartTypes';
-import { WaveOverlayLayer }       from './WaveOverlayLayer';
-import { WaveProjectionLayer }    from './WaveProjectionLayer';
-import { FibonacciOverlayLayer }  from './FibonacciOverlayLayer';
-import { GEXOverlayLayer }        from './GEXOverlayLayer';
-import { WaveChannelLayer }       from './WaveChannelLayer';
-import type { GEXLevels }         from '../../utils/gexCalculator';
+import { WaveOverlayLayer }          from './WaveOverlayLayer';
+import { WaveProjectionLayer }       from './WaveProjectionLayer';
+import { FibonacciOverlayLayer, FibonacciAxisLabels } from './FibonacciOverlayLayer';
+import { GEXOverlayLayer }           from './GEXOverlayLayer';
+import { WaveChannelLayer }          from './WaveChannelLayer';
+import { SupportResistanceLayer }    from './SupportResistanceLayer';
+import { MultiDegreeOverlayLayer }   from './MultiDegreeOverlayLayer';
+import { WaveHistoryLayer }          from './WaveHistoryLayer';
+import type { WaveHistoryPattern }   from './WaveHistoryLayer';
+import type { GEXLevels }            from '../../utils/gexCalculator';
+import type { EWMode }               from '../../stores/chartLayers';
 
 // ── Types ────────────────────────────────────────────────────────────────────
+
+/** Fixed canvas height — exported so parent can position dismiss backdrop below it. */
+export const CHART_CANVAS_HEIGHT = 404;
+
+/** Imperative handle exposed via forwardRef for external crosshair dismissal. */
+export interface CandlestickChartHandle {
+  dismiss: () => void;
+}
 
 export interface CandlestickChartProps {
   candles:      readonly OHLCV[];
@@ -68,6 +83,27 @@ export interface CandlestickChartProps {
   /** Shared values lifted to App level so IndicatorPanel can sync. */
   externalTranslateX?: SharedValue<number>;
   externalCandleW?:    SharedValue<number>;
+  /** Called with true when crosshair becomes visible, false when hidden. */
+  onCrosshairActiveChange?: (active: boolean) => void;
+  /**
+   * Canvas height in logical pixels — should be the measured height of the
+   * containing View (passed via onLayout). Falls back to CHART_CANVAS_HEIGHT
+   * if omitted, but passing the dynamic value is strongly preferred so the
+   * canvas fills its container exactly.
+   */
+  height?: number;
+  /** Called after pan/pinch settles — gives the visible bar range for historical wave recalc. */
+  onVisibleWindowChange?: (startIdx: number, endIdx: number) => void;
+  /** When true, show "Historical" badge to indicate waves are not from the live edge. */
+  isHistorical?: boolean;
+  /** EW display mode from the layers panel. */
+  ewMode?: EWMode;
+  /** HTF wave counts for multi-degree mode — pivot indices already mapped to current TF. */
+  htfWaveCounts?: readonly WaveCount[];
+  /** Completed historical patterns for wave history mode. */
+  historyPatterns?: WaveHistoryPattern[];
+  /** When true, show a "Scanning…" overlay (wave history scan in progress). */
+  historyScanning?: boolean;
 }
 
 // ── Crosshair HUD data ────────────────────────────────────────────────────────
@@ -234,23 +270,90 @@ function buildGridPath(
   return path;
 }
 
+// ── Time-axis helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Pre-formats one string per candle on the JS thread so the UI-thread worklet
+ * never has to do date arithmetic.  Format adapts to the inferred bar spacing:
+ *   < 2 h  → "9:35a" / "2:00p"  (ET 12h with am/pm initial)
+ *   2–23 h → "Mar 25 2p"
+ *   1 D    → "Mar 25"
+ *   ≥ 1 W  → "Mar '25"
+ */
+function formatTimestamps(candles: readonly OHLCV[]): string[] {
+  if (candles.length < 2) return candles.map(() => '');
+  const avgMs =
+    (candles[candles.length - 1].timestamp - candles[0].timestamp) /
+    (candles.length - 1);
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  return candles.map((c) => {
+    const d = new Date(c.timestamp);
+    if (avgMs < 2 * 3_600_000) {
+      // Intraday: use ET (UTC-4 for EDT, the common trading season offset)
+      const etH = ((d.getUTCHours() - 4 + 24) % 24);
+      const m   = String(d.getUTCMinutes()).padStart(2, '0');
+      const h12 = (etH % 12) || 12;
+      const ap  = etH < 12 ? 'a' : 'p';
+      return `${h12}:${m}${ap}`;
+    }
+    if (avgMs < 86_400_000) {
+      // Multi-hour: show date + hour
+      const etH = ((d.getUTCHours() - 4 + 24) % 24);
+      const h12 = (etH % 12) || 12;
+      const ap  = etH < 12 ? 'a' : 'p';
+      return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} ${h12}${ap}`;
+    }
+    if (avgMs < 7 * 86_400_000) {
+      // Daily: "Mar 25"
+      return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+    }
+    // Weekly+: "Mar '25"
+    return `${MONTHS[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
+  });
+}
+
+/**
+ * Rounds rawStep up to the nearest "nice" bar interval so labels land on
+ * round bar counts (every 5 bars, every 10, every 20, etc.).
+ */
+function pickNiceStep(rawStep: number): number {
+  'worklet';
+  const steps = [1, 2, 5, 10, 15, 20, 30, 50, 60, 100, 120, 150, 200, 250, 500, 1000, 2000];
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i] >= rawStep) return steps[i];
+  }
+  return steps[steps.length - 1];
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function CandlestickChart({
+export const CandlestickChart = React.forwardRef<CandlestickChartHandle, CandlestickChartProps>(
+function CandlestickChart({
   candles,
   overlays,
   ticker = '',
   waveCounts = [],
-  waveSliceOffset = 0,
   gexLevels = null,
   activeStopPrice = 0,
   externalTranslateX,
   externalCandleW,
-}: CandlestickChartProps) {
+  onCrosshairActiveChange,
+  height,
+  onVisibleWindowChange,
+  isHistorical = false,
+  ewMode = 'now',
+  htfWaveCounts = [],
+  historyPatterns = [],
+  historyScanning = false,
+}: CandlestickChartProps, ref) {
   const { width: screenW } = useWindowDimensions();
 
   // ── Layout constants (derived from screen size) ────────────────────────────
-  const CANVAS_H        = 404;
+  // Use dynamic height from parent's onLayout; fall back to fixed constant only
+  // when height is not yet measured (< 100 guards against transient 0 values).
+  const CANVAS_H        = height && height >= 100 ? height : CHART_CANVAS_HEIGHT;
   const CHART_AREA_W    = screenW - CHART_LAYOUT.priceAxisWidth;
   const VOL_H           = Math.round(CANVAS_H * CHART_LAYOUT.volumeRatio);
   const TIME_AXIS_H     = CHART_LAYOUT.timeAxisHeight;
@@ -280,13 +383,17 @@ export function CandlestickChart({
   const updateHudJS = useCallback((idx: number, xRight: boolean) => {
     const c    = candles[idx];
     const prev = idx > 0 ? candles[idx - 1] : null;
-    if (!c) { setHudData(null); return; }
+    if (!c) { setHudData(null); onCrosshairActiveChange?.(false); return; }
     const prevClose = prev?.close ?? c.open;
     const pctChange = ((c.close - prevClose) / prevClose) * 100;
     setHudData({ open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume, pctChange, xRight });
-  }, [candles]);
+    onCrosshairActiveChange?.(true);
+  }, [candles, onCrosshairActiveChange]);
 
-  const clearHudJS = useCallback(() => setHudData(null), []);
+  const clearHudJS = useCallback(() => {
+    setHudData(null);
+    onCrosshairActiveChange?.(false);
+  }, [onCrosshairActiveChange]);
 
   // ── Gesture state (SharedValues — UI thread) ───────────────────────────────
   // Always create internal fallbacks (hooks must not be conditional).
@@ -298,17 +405,31 @@ export function CandlestickChart({
   const crosshairX   = useSharedValue(-1);  // -1 = hidden
   const crosshairVisible = useSharedValue(false);
 
+  // ── Imperative dismiss (exposed via forwardRef) ────────────────────────────
+  const dismiss = useCallback(() => {
+    crosshairVisible.value = false;
+    crosshairX.value = -1;
+    setHudData(null);
+    onCrosshairActiveChange?.(false);
+  }, [crosshairVisible, crosshairX, onCrosshairActiveChange]);
+
+  useImperativeHandle(ref, () => ({ dismiss }), [dismiss]);
+
+  // ── Viewport change debounce (for historical wave recalc) ─────────────────
+  const viewportDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleViewportChange = useCallback((start: number, end: number) => {
+    if (viewportDebounceRef.current) clearTimeout(viewportDebounceRef.current);
+    viewportDebounceRef.current = setTimeout(() => {
+      onVisibleWindowChange?.(start, end);
+    }, 400);
+  }, [onVisibleWindowChange]);
+
   // ── Data shared with worklets ──────────────────────────────────────────────
   const candlesSV = useSharedValue<readonly OHLCV[]>([]);
   const ema9SV    = useSharedValue<readonly number[]>([]);
   const ema21SV   = useSharedValue<readonly number[]>([]);
   const ema50SV   = useSharedValue<readonly number[]>([]);
   const ema200SV  = useSharedValue<readonly number[]>([]);
-
-  // Sync candles + EMA arrays to UI thread whenever they change
-  useEffect(() => {
-    candlesSV.value = candles;
-  }, [candles, candlesSV]);
 
   const ema9  = useMemo(() => computeEMA(candles, 9),   [candles]);
   const ema21 = useMemo(() => computeEMA(candles, 21),  [candles]);
@@ -320,13 +441,18 @@ export function CandlestickChart({
   useEffect(() => { ema50SV.value  = ema50; }, [ema50,  ema50SV]);
   useEffect(() => { ema200SV.value = ema200;}, [ema200, ema200SV]);
 
-  // Initialize translateX so the latest candles appear on the right
+  // Sync candles to UI thread and initialize translateX so the latest candles
+  // appear on the right. translateX >= 0 means it is at the default/reset
+  // position set by chart.tsx on ticker change — use that as the signal to
+  // (re-)initialise to the rightmost bars.
   useEffect(() => {
-    const totalW = candles.length * CHART_LAYOUT.candleDefaultW;
-    const initTx = Math.min(0, -(totalW - CHART_AREA_W + CHART_LAYOUT.priceAxisWidth * 0.5));
-    translateX.value = initTx;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles.length]);
+    candlesSV.value = candles;
+    if (candles.length > 0 && translateX.value >= 0) {
+      const totalW = candles.length * candleW.value;
+      const initTx = Math.min(0, -(totalW - CHART_AREA_W + CHART_LAYOUT.priceAxisWidth * 0.5));
+      translateX.value = initTx;
+    }
+  }, [candles]);
 
   // ── Derived layout (UI thread) ─────────────────────────────────────────────
   const layoutDV = useDerivedValue(() => {
@@ -415,6 +541,66 @@ export function CandlestickChart({
     return buildEmaPath(ema200SV.value, candlesSV.value, startIdx, endIdx, tx, cw, minP, maxP, CHART_TOP, CHART_DRAW_H);
   });
 
+  // ── Time-axis labels ─────────────────────────────────────────────────────
+  // Pre-formatted strings (one per candle) — computed on JS thread, stored in
+  // a SharedValue so the UI-thread worklet can index into them without allocating.
+  const formattedTimestampsSV = useSharedValue<string[]>([]);
+  useEffect(() => {
+    formattedTimestampsSV.value = formatTimestamps(candles);
+  }, [candles, formattedTimestampsSV]);
+
+  // UI-thread: pick ~10 evenly-spaced bar indices and their canvas x positions.
+  const MAX_TIME_LABELS = 12;
+  const timeLabelsDV = useDerivedValue((): Array<{ x: number; idx: number }> => {
+    'worklet';
+    const { startIdx, endIdx, tx, cw } = layoutDV.value;
+    const visible = endIdx - startIdx;
+    if (visible < 2) return [];
+
+    const step = pickNiceStep(visible / 10);
+    const firstIdx = Math.ceil((startIdx + 1) / step) * step;
+    const labels: Array<{ x: number; idx: number }> = [];
+
+    for (let idx = firstIdx; idx < endIdx && labels.length < MAX_TIME_LABELS; idx += step) {
+      const x = tx + idx * cw + cw * 0.5;
+      // Only emit labels fully inside the chart area (leave 20 px margin at right)
+      if (x >= 4 && x <= CHART_AREA_W - 20) {
+        labels.push({ x, idx });
+      }
+    }
+    return labels;
+  });
+
+  // Tick-mark path: short vertical lines at each label's x, inside time axis.
+  const timeTickPath = useDerivedValue((): SkPath => {
+    'worklet';
+    const path = Skia.Path.Make();
+    const labels = timeLabelsDV.value;
+    for (let i = 0; i < labels.length; i++) {
+      const x = labels[i].x;
+      path.moveTo(x, TIME_AXIS_TOP);
+      path.lineTo(x, TIME_AXIS_TOP + 4);
+    }
+    return path;
+  });
+
+  // Bridge UI→JS: run whenever label positions change (during pan/zoom).
+  const [timeLabels, setTimeLabels] = useState<Array<{ x: number; text: string }>>([]);
+  useAnimatedReaction(
+    () => timeLabelsDV.value,
+    (labels) => {
+      'worklet';
+      const strs = formattedTimestampsSV.value;
+      if (strs.length === 0) return;
+      const result: Array<{ x: number; text: string }> = [];
+      for (let i = 0; i < labels.length; i++) {
+        const { x, idx } = labels[i];
+        result.push({ x, text: strs[idx] ?? '' });
+      }
+      runOnJS(setTimeLabels)(result);
+    },
+  );
+
   // ── Crosshair ─────────────────────────────────────────────────────────────
   const crosshairOpacity = useDerivedValue(() => crosshairVisible.value ? 1 : 0);
 
@@ -494,25 +680,44 @@ export function CandlestickChart({
   // ── Gestures ───────────────────────────────────────────────────────────────
 
   // Pinch to zoom (time axis = candleWidth)
+  // translateX is adjusted to keep the focal point (center of pinch) anchored
+  // so the chart zooms around where your fingers are, not the left edge.
   const pinchStartCW = useSharedValue<number>(CHART_LAYOUT.candleDefaultW);
+  const pinchStartTx = useSharedValue<number>(0);
+  const pinchFocalX  = useSharedValue<number>(0);
   const pinchGesture = Gesture.Pinch()
-    .onStart(() => {
+    .onStart((e: { focalX: number }) => {
       'worklet';
       pinchStartCW.value = candleW.value;
+      pinchStartTx.value = translateX.value;
+      pinchFocalX.value  = e.focalX;
     })
-    .onUpdate((e) => {
+    .onUpdate((e: { scale: number }) => {
       'worklet';
-      const next = clamp(
+      const newCw = clamp(
         pinchStartCW.value * e.scale,
         CHART_LAYOUT.candleMinW,
         CHART_LAYOUT.candleMaxW,
       );
-      candleW.value = next;
+      // Which bar index was under the focal point at gesture start?
+      const focalBar = (pinchFocalX.value - pinchStartTx.value) / pinchStartCW.value;
+      // Keep that bar anchored under the focal point after scaling
+      const newTx = pinchFocalX.value - focalBar * newCw;
+      const { n } = layoutDV.value;
+      const minTx = -(n * newCw - CHART_AREA_W * 0.8);
+      candleW.value    = newCw;
+      translateX.value = clamp(newTx, minTx, 0);
+    })
+    .onEnd(() => {
+      'worklet';
+      const { startIdx, endIdx } = layoutDV.value;
+      runOnJS(handleViewportChange)(startIdx, endIdx);
     });
 
-  // Pan to scroll
+  // Pan to scroll — 1 finger only, restarts cleanly after pinch ends
   const panStartTx = useSharedValue(0);
   const panGesture = Gesture.Pan()
+    .minPointers(1)
     .maxPointers(1)
     .onStart(() => {
       'worklet';
@@ -521,25 +726,31 @@ export function CandlestickChart({
     .onUpdate((e) => {
       'worklet';
       const { n, cw } = layoutDV.value;
-      const maxTx = 0;
       const minTx = -(n * cw - CHART_AREA_W * 0.8);
-      translateX.value = clamp(panStartTx.value + e.translationX, minTx, maxTx);
+      translateX.value = clamp(panStartTx.value + e.translationX, minTx, 0);
+    })
+    .onEnd(() => {
+      'worklet';
+      const { startIdx, endIdx } = layoutDV.value;
+      runOnJS(handleViewportChange)(startIdx, endIdx);
     });
 
   // Tap for crosshair + HUD
-  const tapGesture = Gesture.Tap().onEnd((e) => {
-    'worklet';
-    const { startIdx, endIdx, tx, cw } = layoutDV.value;
-    const idx    = Math.min(endIdx - 1, Math.max(startIdx, Math.round((e.x - tx) / cw)));
-    const xRight = e.x > CHART_AREA_W / 2;
-    runOnJS(updateHudJS)(idx, xRight);
-    crosshairX.value = e.x;
-    crosshairVisible.value = true;
-  });
+  const tapGesture = Gesture.Tap()
+    .maxDuration(250)
+    .onEnd((e) => {
+      'worklet';
+      const { startIdx, endIdx, tx, cw } = layoutDV.value;
+      const idx    = Math.min(endIdx - 1, Math.max(startIdx, Math.round((e.x - tx) / cw)));
+      const xRight = e.x > CHART_AREA_W / 2;
+      runOnJS(updateHudJS)(idx, xRight);
+      crosshairX.value = e.x;
+      crosshairVisible.value = true;
+    });
 
-  // Long press dismisses crosshair + HUD
+  // Long press dismisses crosshair + HUD (150 ms for quick dismiss)
   const longPressGesture = Gesture.LongPress()
-    .minDuration(300)
+    .minDuration(150)
     .onStart(() => {
       'worklet';
       crosshairVisible.value = false;
@@ -547,16 +758,25 @@ export function CandlestickChart({
       runOnJS(clearHudJS)();
     });
 
+  // Pan and pinch are true siblings in Simultaneous — this allows a clean
+  // transition from 2-finger pinch back to 1-finger pan without getting stuck.
+  // Tap / longPress run exclusively so a quick tap doesn't also fire pan.
   const composedGesture = Gesture.Simultaneous(
-    Gesture.Exclusive(tapGesture, panGesture),
+    panGesture,
     pinchGesture,
-    longPressGesture,
+    Gesture.Exclusive(tapGesture, longPressGesture),
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // RULE 4: Never render Canvas before font is ready (useFont is async).
+  // Prevents createTextInstance crash in Skia's HostConfig on first render.
+  // Don't render canvas until both font and a valid measured height are ready.
+  if (!font || !height || height < 100) return <View style={[styles.wrapper, { height: height ?? CHART_CANVAS_HEIGHT }]} />;
+
   return (
     <View style={styles.wrapper}>
+      <SkiaErrorBoundary name="CandlestickChart" height={CANVAS_H}>
       <GestureDetector gesture={composedGesture}>
         <Canvas style={[styles.canvas, { width: screenW, height: CANVAS_H }]}>
           {/* ── Background ── */}
@@ -614,6 +834,46 @@ export function CandlestickChart({
             />
           )}
 
+          {/* ── Time-axis separator line ── */}
+          <Line
+            p1={{ x: 0, y: TIME_AXIS_TOP }}
+            p2={{ x: CHART_AREA_W, y: TIME_AXIS_TOP }}
+            color={CHART_COLORS.gridLine}
+            strokeWidth={0.5}
+          />
+
+          {/* ── Time-axis tick marks (updates live during pan/zoom) ── */}
+          <Path
+            path={timeTickPath}
+            color={CHART_COLORS.textMuted}
+            style="stroke"
+            strokeWidth={0.5}
+          />
+
+          {/* ── Time-axis labels (bridged from UI thread via useAnimatedReaction) ── */}
+          {font !== null && timeLabels.map((lbl, i) => (
+            <SkiaText
+              key={i}
+              x={lbl.x - 12}
+              y={TIME_AXIS_TOP + 14}
+              text={lbl.text}
+              font={font}
+              color={CHART_COLORS.textMuted}
+            />
+          ))}
+
+          {/* ── Fibonacci axis labels (Y-axis strip, outside clip) ── */}
+          {overlays.fibRetracements && waveCounts.length > 0 && (
+            <FibonacciAxisLabels
+              waveCounts={waveCounts}
+              layoutDV={layoutDV}
+              chartTop={CHART_TOP}
+              chartDrawH={CHART_DRAW_H}
+              axisLeft={CHART_AREA_W}
+              font={font}
+            />
+          )}
+
           {/* ── Chart drawing area — clipped to prevent overlap with price axis ── */}
           <Group clip={chartClipRect}>
 
@@ -667,7 +927,7 @@ export function CandlestickChart({
               />
             )}
 
-            {/* ── Fibonacci overlay layer ── */}
+            {/* ── Fibonacci overlay layer (dashed lines only — labels on Y-axis) ── */}
             {overlays.fibRetracements && waveCounts.length > 0 && (
               <FibonacciOverlayLayer
                 waveCounts={waveCounts}
@@ -675,7 +935,6 @@ export function CandlestickChart({
                 chartTop={CHART_TOP}
                 chartDrawH={CHART_DRAW_H}
                 chartAreaW={CHART_AREA_W}
-                font={font}
               />
             )}
 
@@ -691,13 +950,10 @@ export function CandlestickChart({
               />
             )}
 
-            {/* ── Wave channel lines (E4) ── */}
+            {/* ── Support / Resistance zones from wave pivots ── */}
             {overlays.elliottWaveLabels && waveCounts.length > 0 && (
-              <WaveChannelLayer
+              <SupportResistanceLayer
                 waveCounts={waveCounts}
-                sliceOffset={waveSliceOffset}
-                translateX={translateX}
-                candleW={candleW}
                 layoutDV={layoutDV}
                 chartTop={CHART_TOP}
                 chartDrawH={CHART_DRAW_H}
@@ -706,11 +962,10 @@ export function CandlestickChart({
               />
             )}
 
-            {/* ── Wave projections layer (T1/T2/T3 zones + projected path) ── */}
-            {overlays.elliottWaveLabels && waveCounts.length > 0 && (
-              <WaveProjectionLayer
+            {/* ── Wave channel lines (E4) — independent toggle from wave labels ── */}
+            {overlays.showEWChannel && waveCounts.length > 0 && (
+              <WaveChannelLayer
                 waveCounts={waveCounts}
-                candles={candles}
                 translateX={translateX}
                 candleW={candleW}
                 layoutDV={layoutDV}
@@ -725,20 +980,63 @@ export function CandlestickChart({
             {overlays.elliottWaveLabels && waveCounts.length > 0 && (
               <WaveOverlayLayer
                 waveCounts={waveCounts}
-                sliceOffset={waveSliceOffset}
                 translateX={translateX}
                 candleW={candleW}
                 layoutDV={layoutDV}
                 chartTop={CHART_TOP}
                 chartDrawH={CHART_DRAW_H}
                 chartAreaW={CHART_AREA_W}
-                activeStopPrice={activeStopPrice}
+                activeStopPrice={overlays.showInvalidation ? activeStopPrice : 0}
                 showAlt={showAlt}
+                showWaveLabels={overlays.showWaveLabels}
                 font={font}
               />
             )}
 
-          </Group> {/* end chart clip */}
+            {/* ── Multi-Degree HTF overlay ── */}
+            {ewMode === 'multi-degree' && htfWaveCounts.length > 0 && (
+              <MultiDegreeOverlayLayer
+                htfWaveCounts={htfWaveCounts}
+                translateX={translateX}
+                candleW={candleW}
+                layoutDV={layoutDV}
+                chartTop={CHART_TOP}
+                chartDrawH={CHART_DRAW_H}
+                chartAreaW={CHART_AREA_W}
+                font={font}
+              />
+            )}
+
+            {/* ── Wave History overlay ── */}
+            {ewMode === 'history' && historyPatterns.length > 0 && (
+              <WaveHistoryLayer
+                patterns={historyPatterns}
+                translateX={translateX}
+                candleW={candleW}
+                layoutDV={layoutDV}
+                chartTop={CHART_TOP}
+                chartDrawH={CHART_DRAW_H}
+                chartAreaW={CHART_AREA_W}
+                font={font}
+              />
+            )}
+
+          </Group>{/* end chart clip */}
+
+          {/* ── Wave projections layer — OUTSIDE clip so right-axis labels are visible ── */}
+          {overlays.elliottWaveLabels && waveCounts.length > 0 && (
+            <WaveProjectionLayer
+              waveCounts={waveCounts}
+              candles={candles}
+              translateX={translateX}
+              candleW={candleW}
+              layoutDV={layoutDV}
+              chartTop={CHART_TOP}
+              chartDrawH={CHART_DRAW_H}
+              chartAreaW={CHART_AREA_W}
+              font={font}
+            />
+          )}
 
           {/* ── Crosshair layer ── */}
           <Group opacity={crosshairOpacity}>
@@ -769,6 +1067,7 @@ export function CandlestickChart({
           </Group>
         </Canvas>
       </GestureDetector>
+      </SkiaErrorBoundary>
 
       {/* ── Confidence badge (Part 5) — top-left overlay ── */}
       {waveCounts.length > 0 && (() => {
@@ -792,6 +1091,27 @@ export function CandlestickChart({
           </View>
         );
       })()}
+
+      {/* ── Historical badge — bottom-left overlay ── */}
+      {isHistorical && (
+        <View pointerEvents="none" style={styles.historicalBadge}>
+          <Text style={styles.historicalText}>◀ Historical</Text>
+        </View>
+      )}
+
+      {/* ── Wave History scanning overlay ── */}
+      {historyScanning && (
+        <View pointerEvents="none" style={styles.scanningOverlay}>
+          <Text style={styles.scanningText}>⟳ Scanning wave history…</Text>
+        </View>
+      )}
+
+      {/* ── Wave History mode badge ── */}
+      {ewMode === 'history' && !historyScanning && historyPatterns.length > 0 && (
+        <View pointerEvents="none" style={styles.historyBadge}>
+          <Text style={styles.historyBadgeText}>Wave history: {historyPatterns.length} patterns</Text>
+        </View>
+      )}
 
       {/* ── Show Alt toggle button — top-right overlay ── */}
       {waveCounts.length > 1 && (
@@ -834,7 +1154,7 @@ export function CandlestickChart({
       )}
     </View>
   );
-}
+}); // end React.forwardRef
 
 const styles = StyleSheet.create({
   wrapper: {
@@ -931,5 +1251,54 @@ const styles = StyleSheet.create({
   hudPct: {
     fontSize:  10,
     fontWeight: '600',
+  },
+
+  // Historical mode badge
+  historicalBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(255,215,0,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.5)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  historicalText: {
+    color: '#FFD700',
+    fontSize: 10,
+    fontFamily: 'System',
+  },
+  scanningOverlay: {
+    position: 'absolute',
+    top: 8,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  scanningText: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    color: '#F59E0B',
+    fontSize: 10,
+    fontWeight: '600',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  historyBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 70,
+    backgroundColor: 'rgba(0,206,209,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,206,209,0.4)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  historyBadgeText: {
+    color: '#00CED1',
+    fontSize: 9,
   },
 });

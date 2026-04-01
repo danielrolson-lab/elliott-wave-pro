@@ -50,8 +50,8 @@ export const CHART_LAYOUT = {
   paddingTop:      12,
   volumeRatio:     0.18,   // volume pane = 18% of total canvas height
   candleGapRatio:  0.15,   // gap = candleWidth * this
-  candleDefaultW:  8,
-  candleMinW:      3,
+  candleDefaultW:  5,
+  candleMinW:      1.5,   // ~230 candles visible at max zoom-out
   candleMaxW:      40,
   gridLineCount:   6,
 } as const;

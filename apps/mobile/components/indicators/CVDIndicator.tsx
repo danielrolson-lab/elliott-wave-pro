@@ -14,6 +14,7 @@
 
 import React from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
+import { SkiaErrorBoundary } from '../common/SkiaErrorBoundary';
 import {
   Canvas,
   Path,
@@ -150,6 +151,25 @@ export function CVDIndicator({
     return p ? p.zeroY - 3 : -100;
   });
 
+  // Extracted paths for unconditional Canvas rendering (RULE: no .value in JSX)
+  const risingPath = useDerivedValue((): SkPath => {
+    'worklet';
+    return paths.value?.rising ?? Skia.Path.Make();
+  });
+  const fallingPath = useDerivedValue((): SkPath => {
+    'worklet';
+    return paths.value?.falling ?? Skia.Path.Make();
+  });
+  const zeroLinePath = useDerivedValue((): SkPath => {
+    'worklet';
+    const p = Skia.Path.Make();
+    const data = paths.value;
+    if (!data) return p;
+    p.moveTo(0, data.zeroY);
+    p.lineTo(4096, data.zeroY);
+    return p;
+  });
+
   // Divergence dot positions (JS thread, static on paint)
   const divergenceDots = buildDivergenceDots(
     divergences, cumulative, translateX, candleW, screenW,
@@ -164,42 +184,37 @@ export function CVDIndicator({
   const labelColor = last >= 0 ? '#22c55e' : '#ef4444';
 
   return (
+    <SkiaErrorBoundary name="CVDIndicator" height={INDICATOR_H}>
     <Canvas style={[styles.canvas, { width: screenW }]}>
       {/* Zero line */}
-      {paths.value && (
-        <Line
-          p1={{ x: 0, y: paths.value.zeroY }}
-          p2={{ x: screenW, y: paths.value.zeroY }}
-          color={CHART_COLORS.gridLine}
-          strokeWidth={1}
-        >
-          <DashPathEffect intervals={[4, 4]} />
-        </Line>
-      )}
+      <Path
+        path={zeroLinePath}
+        color={CHART_COLORS.gridLine}
+        style="stroke"
+        strokeWidth={1}
+      >
+        <DashPathEffect intervals={[4, 4]} />
+      </Path>
 
       {/* Rising CVD (green) */}
-      {paths.value && (
-        <Path
-          path={paths.value.rising}
-          color="#22c55e"
-          style="stroke"
-          strokeWidth={1.5}
-          strokeJoin="round"
-          strokeCap="round"
-        />
-      )}
+      <Path
+        path={risingPath}
+        color="#22c55e"
+        style="stroke"
+        strokeWidth={1.5}
+        strokeJoin="round"
+        strokeCap="round"
+      />
 
       {/* Falling CVD (red) */}
-      {paths.value && (
-        <Path
-          path={paths.value.falling}
-          color="#ef4444"
-          style="stroke"
-          strokeWidth={1.5}
-          strokeJoin="round"
-          strokeCap="round"
-        />
-      )}
+      <Path
+        path={fallingPath}
+        color="#ef4444"
+        style="stroke"
+        strokeWidth={1.5}
+        strokeJoin="round"
+        strokeCap="round"
+      />
 
       {/* Divergence dots */}
       {divergenceDots.map((d) => (
@@ -231,6 +246,7 @@ export function CVDIndicator({
         />
       )}
     </Canvas>
+    </SkiaErrorBoundary>
   );
 }
 

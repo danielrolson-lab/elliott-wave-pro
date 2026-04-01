@@ -11,7 +11,9 @@
  *
  * Request body:
  *   { ticker, waveLabel, structure, probability, fibLevels, regime,
- *     nextTarget, invalidation, price, gexLevel }
+ *     nextTarget, t2, t3, invalidation, price, gexLevel,
+ *     altWaveLabel, altConfidence, waveType, waveStart,
+ *     ewMode, htfLabel, htfTF, htfStructure }
  *
  * Response:
  *   { commentary: string }
@@ -20,16 +22,26 @@
 export const config = { runtime: 'edge' };
 
 interface CommentaryRequest {
-  ticker:       string;
-  waveLabel:    string;
-  structure:    string;
-  probability:  number;
-  fibLevels?:   { label: string; price: number }[];
-  regime?:      string;
-  nextTarget?:  number | null;
+  ticker:        string;
+  waveLabel:     string;
+  structure:     string;
+  probability:   number;
+  fibLevels?:    { label: string; price: number }[];
+  regime?:       string;
+  nextTarget?:   number | null;
+  t2?:           number | null;
+  t3?:           number | null;
   invalidation?: number | null;
-  price?:       number | null;
-  gexLevel?:    string | null;
+  price?:        number | null;
+  gexLevel?:     string | null;
+  altWaveLabel?: string | null;
+  altConfidence?: number | null;
+  waveType?:     string | null;   // 'impulse' | 'corrective' | 'forming_w3' etc.
+  waveStart?:    number | null;   // price where current wave began
+  ewMode?:       string | null;   // 'now' | 'multi-degree' | 'history'
+  htfLabel?:     string | null;   // HTF current wave label (e.g. '3')
+  htfTF?:        string | null;   // HTF timeframe (e.g. '1D')
+  htfStructure?: string | null;   // HTF wave structure type
 }
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
@@ -59,32 +71,68 @@ export default async function handler(req: Request): Promise<Response> {
 
   const {
     ticker, waveLabel, structure, probability,
-    fibLevels, regime, nextTarget, invalidation, price, gexLevel,
+    fibLevels, regime, nextTarget, t2, t3, invalidation, price, gexLevel,
+    altWaveLabel, altConfidence, waveType, waveStart,
+    ewMode, htfLabel, htfTF, htfStructure,
   } = body;
 
   const fibText = fibLevels && fibLevels.length > 0
-    ? fibLevels.map((f) => `${f.label} at $${f.price.toFixed(2)}`).join(', ')
-    : 'no Fibonacci levels computed';
+    ? fibLevels.slice(0, 4).map((f) => `${f.label} at $${f.price.toFixed(2)}`).join(', ')
+    : 'none computed';
 
-  const prompt = `You are an institutional Elliott Wave analyst providing a concise trade scenario interpretation.
+  const targetsText = [
+    nextTarget ? `T1 $${nextTarget.toFixed(2)}` : null,
+    t2 ? `T2 $${t2.toFixed(2)}` : null,
+    t3 ? `T3 $${t3.toFixed(2)}` : null,
+  ].filter(Boolean).join(' → ') || 'none computed';
 
-Context:
+  const altText = altWaveLabel && altConfidence
+    ? `Alternate scenario: Wave ${altWaveLabel} at ${Math.round(altConfidence * 100)}% probability`
+    : null;
+
+  const waveMoveText = waveStart && price
+    ? `(moved ${((price - waveStart) / waveStart * 100).toFixed(1)}% from wave start $${waveStart.toFixed(2)})`
+    : '';
+
+  const isMultiDegree = ewMode === 'multi-degree' && htfLabel && htfTF;
+  const htfContext = isMultiDegree
+    ? `- Higher timeframe context: ${htfTF} Wave ${htfLabel} (${htfStructure ?? 'impulse'}) — current ${waveLabel} is a sub-wave of this larger structure`
+    : null;
+
+  // Detect potential W1/WC ambiguity (low confidence, corrective structure)
+  const isAmbiguous = !isMultiDegree && probability < 0.55
+    && (structure?.toLowerCase().includes('corrective') || waveLabel === '1' || waveLabel === 'A');
+  const ambiguityNote = isAmbiguous
+    ? `Note: Wave 1 and Wave A (start of correction) look identical at this stage — probability is below 55%, so both scenarios are viable.`
+    : null;
+
+  const prompt = `You are an institutional Elliott Wave analyst. Provide a 3–4 sentence trade interpretation for a professional trader. Be specific — name exact prices, don't hedge with generic disclaimers.
+
+Situation:
 - Ticker: ${ticker}
-- Current price: ${price ? `$${price.toFixed(2)}` : 'unknown'}
-- Active wave: Wave ${waveLabel} (${structure})
-- Bayesian probability: ${Math.round(probability * 100)}%
+- Current price: ${price ? `$${price.toFixed(2)}` : 'unknown'} ${waveMoveText}
+- Primary count: Wave ${waveLabel} (${structure}) — ${Math.round(probability * 100)}% Bayesian confidence
+- Wave structure type: ${waveType ?? 'impulse'}
+${htfContext ? htfContext : ''}
+${altText ? `- ${altText}` : ''}
+${ambiguityNote ? `- ${ambiguityNote}` : ''}
 - Market regime: ${regime ?? 'unknown'}
-- GEX level: ${gexLevel ?? 'neutral'}
+- GEX regime: ${gexLevel ?? 'neutral'}
+- Fibonacci targets: ${targetsText}
+- Invalidation / stop: ${invalidation ? `$${invalidation.toFixed(2)}` : 'none computed'}
 - Key Fibonacci levels: ${fibText}
-- Primary target: ${nextTarget ? `$${nextTarget.toFixed(2)}` : 'none computed'}
-- Invalidation: ${invalidation ? `$${invalidation.toFixed(2)}` : 'none computed'}
 
-Write 2–3 sentences of plain-English commentary for a professional trader:
-1. Explain what Wave ${waveLabel} means for the current price action in ${ticker}.
-2. Reference the most relevant Fibonacci level and the GEX regime.
-3. Give a specific, actionable interpretation (what to watch for, where the trade breaks down).
+${isMultiDegree
+  ? `Write exactly 3 sentences:
+1. Explain how ${ticker}'s current Wave ${waveLabel} fits within the ${htfTF} Wave ${htfLabel} structure — what position in the larger trend does this represent?
+2. Name the most actionable price target or support level implied by this degree alignment.
+3. State what invalidates this multi-degree count and what the trader should watch for.`
+  : `Write exactly 3 sentences:
+1. Describe what Wave ${waveLabel} in ${ticker} means right now — reference the price move and what typically follows.
+2. Name the most actionable Fibonacci level or target price and why it matters (GEX, nearest fib zone, or T1/T2).
+3. State precisely what invalidates this count (the specific price level) and what the alt scenario implies${isAmbiguous ? ' — address the W1 vs Wave A ambiguity' : ''}.`}
 
-Be concise, specific, and avoid generic disclaimers. Write in present tense.`;
+Use present tense. No disclaimers.`;
 
   try {
     const anthropicRes = await fetch(ANTHROPIC_API_URL, {
@@ -96,7 +144,7 @@ Be concise, specific, and avoid generic disclaimers. Write in present tense.`;
       },
       body: JSON.stringify({
         model:      'claude-sonnet-4-20250514',
-        max_tokens: 256,
+        max_tokens: 320,
         messages: [{ role: 'user', content: prompt }],
       }),
     });

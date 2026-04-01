@@ -159,6 +159,7 @@ export function MilkyWayScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>🌌 Milky Waves Setups</Text>
         <Text style={styles.subtitle}>Top Elliott Wave setups across S&P 500</Text>
+        <Text style={styles.disclaimer}>Fast scan · positional heuristic · may differ from chart view</Text>
       </View>
 
       {/* Timeframe tabs */}
@@ -191,6 +192,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },
   title: { color: DARK.textPrimary, fontSize: 20, fontWeight: '700' },
   subtitle: { color: DARK.textMuted, fontSize: 12, marginTop: 2 },
+  disclaimer: { color: '#6b7280', fontSize: 10, marginTop: 2, fontStyle: 'italic' },
   tabScroll: { flexGrow: 0, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DARK.separator },
   tabRow: { paddingHorizontal: 12, gap: 6, paddingBottom: 8 },
   tab: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: DARK.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: DARK.border },

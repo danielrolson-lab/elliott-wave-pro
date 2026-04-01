@@ -80,24 +80,69 @@ interface PolygonTickerResult {
   type:   string;
 }
 
+// Well-known tickers that deserve a small boost so they surface above obscure ETFs
+const WELL_KNOWN = new Set([
+  'SPY','QQQ','AAPL','TSLA','NVDA','MSFT','AMZN','META','GOOGL','GOOG',
+  'GS','SLV','GLD','IWM','DIA','TLT','VXX','VIX','XLF','XLK','ARKK',
+  'SQQQ','TQQQ','SPXU','UPRO','UVXY','SVXY','INTC','AMD','NFLX','UBER',
+]);
+
+function scoreResult(result: PolygonTickerResult, query: string): number {
+  const q      = query.toUpperCase().trim();
+  const ticker = result.ticker.toUpperCase();
+  const name   = (result.name ?? '').toUpperCase();
+  let score = 0;
+
+  if (ticker === q)               score += 1000;  // Tier 1: exact ticker
+  else if (ticker.startsWith(q))  score += 500;   // Tier 2: ticker prefix
+  else if (ticker.includes(q))    score += 100;   // Tier 3: ticker contains
+  else if (name.startsWith(q))    score += 50;    // Tier 4: name prefix
+  else if (name.includes(q))      score += 10;    // Tier 5: name contains
+
+  // Penalise longer tickers when a prefix match (SPY beats SPYG beats SPYV)
+  if (ticker !== q) score -= ticker.length * 2;
+
+  // Bonus for well-known liquid tickers
+  if (WELL_KNOWN.has(ticker)) score += 25;
+
+  return score;
+}
+
 async function searchTickers(query: string): Promise<PolygonTickerResult[]> {
-  if (!query || query.length < 1) return [];
-  const url = `${POLYGON_BASE}/v3/reference/tickers?search=${encodeURIComponent(query)}&active=true&limit=10&apiKey=${POLYGON_API_KEY}`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const json = await res.json() as { results?: PolygonTickerResult[] };
-    const results = json.results ?? [];
-    // BUG-003: exact ticker match first, then prefix, then rest
-    const upper = query.toUpperCase();
-    return results.sort((a, b) => {
-      const aExact   = a.ticker === upper ? 0 : a.ticker.startsWith(upper) ? 1 : 2;
-      const bExact   = b.ticker === upper ? 0 : b.ticker.startsWith(upper) ? 1 : 2;
-      return aExact - bExact;
-    });
-  } catch {
-    return [];
+  if (!query || query.trim().length < 2) return [];
+  const q = query.trim().toUpperCase();
+
+  // Run fuzzy search AND exact ticker lookup in parallel.
+  // Polygon's ?search= does text matching on name/description — exact tickers like SLV
+  // may not appear in the top 50 fuzzy results. The ?ticker= param does exact-only lookup.
+  const [fuzzyRes, exactRes] = await Promise.all([
+    fetch(`${POLYGON_BASE}/v3/reference/tickers?search=${encodeURIComponent(q)}&active=true&limit=50&apiKey=${POLYGON_API_KEY}`)
+      .then((r) => r.ok ? r.json() as Promise<{ results?: PolygonTickerResult[] }> : { results: [] })
+      .catch(() => ({ results: [] as PolygonTickerResult[] })),
+    fetch(`${POLYGON_BASE}/v3/reference/tickers?ticker=${encodeURIComponent(q)}&active=true&limit=1&apiKey=${POLYGON_API_KEY}`)
+      .then((r) => r.ok ? r.json() as Promise<{ results?: PolygonTickerResult[] }> : { results: [] })
+      .catch(() => ({ results: [] as PolygonTickerResult[] })),
+  ]);
+
+  const fuzzy = (fuzzyRes as { results?: PolygonTickerResult[] }).results ?? [];
+  const exact = ((exactRes as { results?: PolygonTickerResult[] }).results ?? [])[0] ?? null;
+
+  // Score and sort fuzzy results
+  const scored = fuzzy
+    .map((r) => ({ r, score: scoreResult(r, q) }))
+    .sort((a, b) => b.score - a.score);
+
+  // Filter: move tickers with `:` or spaces out of top results
+  const clean = scored.filter(({ r }) => !r.ticker.includes(':') && !r.ticker.includes(' '));
+  const noisy = scored.filter(({ r }) =>  r.ticker.includes(':') || r.ticker.includes(' '));
+
+  const ranked = [...clean, ...noisy].map(({ r }) => r);
+
+  // Guarantee the exact match is at position 0 if not already there
+  if (exact && ranked[0]?.ticker !== exact.ticker) {
+    return [exact, ...ranked.filter((r) => r.ticker !== exact.ticker)].slice(0, 10);
   }
+  return ranked.slice(0, 10);
 }
 
 // ── Sparkline (30-candle Skia line) ─────────────────────────────────────────
@@ -464,26 +509,57 @@ const searchStyles = StyleSheet.create({
 
 // ── Autocomplete dropdown ─────────────────────────────────────────────────────
 
+/** Split ticker text into [before, match, after] for highlighting. */
+function splitForHighlight(
+  ticker: string,
+  query: string,
+): [string, string, string] {
+  const q   = query.toUpperCase().trim();
+  const t   = ticker.toUpperCase();
+  const idx = t.indexOf(q);
+  if (idx === -1 || !q) return [ticker, '', ''];
+  return [
+    ticker.slice(0, idx),
+    ticker.slice(idx, idx + q.length),
+    ticker.slice(idx + q.length),
+  ];
+}
+
 interface AutocompleteDropdownProps {
   results: PolygonTickerResult[];
+  query:   string;
   onSelect: (result: PolygonTickerResult) => void;
 }
 
-function AutocompleteDropdown({ results, onSelect }: AutocompleteDropdownProps) {
+function AutocompleteDropdown({ results, query, onSelect }: AutocompleteDropdownProps) {
   if (results.length === 0) return null;
+
+  const hasExact = results[0]?.ticker.toUpperCase() === query.toUpperCase().trim();
+  const countLabel = hasExact
+    ? `Exact match + ${results.length - 1} similar`
+    : `${results.length} results for "${query.toUpperCase().trim()}"`;
+
   return (
     <View style={dropdownStyles.container}>
-      {results.map((r) => (
-        <TouchableOpacity
-          key={r.ticker}
-          style={dropdownStyles.row}
-          onPress={() => onSelect(r)}
-          activeOpacity={0.7}
-        >
-          <Text style={dropdownStyles.ticker}>{r.ticker}</Text>
-          <Text style={dropdownStyles.name} numberOfLines={1}>{r.name}</Text>
-        </TouchableOpacity>
-      ))}
+      <Text style={dropdownStyles.countLabel}>{countLabel}</Text>
+      {results.map((r) => {
+        const [before, match, after] = splitForHighlight(r.ticker, query);
+        return (
+          <TouchableOpacity
+            key={r.ticker}
+            style={dropdownStyles.row}
+            onPress={() => onSelect(r)}
+            activeOpacity={0.7}
+          >
+            <Text style={dropdownStyles.tickerBase}>
+              <Text style={dropdownStyles.tickerDim}>{before}</Text>
+              <Text style={dropdownStyles.tickerMatch}>{match}</Text>
+              <Text style={dropdownStyles.tickerDim}>{after}</Text>
+            </Text>
+            <Text style={dropdownStyles.name} numberOfLines={1}>{r.name}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -514,11 +590,26 @@ const dropdownStyles = StyleSheet.create({
     borderBottomColor: CHART_COLORS.gridLine,
     gap: 10,
   },
-  ticker: {
-    color:      CHART_COLORS.textPrimary,
+  countLabel: {
+    color:     CHART_COLORS.textMuted,
+    fontSize:  10,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  tickerBase: {
+    width:    52,
+    fontSize: 13,
+  },
+  tickerMatch: {
+    color:      '#FFFFFF',
+    fontWeight: '700',
     fontSize:   13,
-    fontWeight: '600',
-    width:      52,
+  },
+  tickerDim: {
+    color:    '#888888',
+    fontWeight: '400',
+    fontSize:   13,
   },
   name: {
     color:    CHART_COLORS.textMuted,
@@ -564,11 +655,18 @@ export function WatchlistScreen() {
   const handleQueryChange = useCallback((v: string) => {
     setQuery(v);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!v.trim()) { setSuggestions([]); return; }
+
+    const trimmed = v.trim();
+    if (trimmed.length < 2) { setSuggestions([]); return; }
+
+    // Immediate search when query looks like a pure ticker (1-5 uppercase letters)
+    const isTicker = /^[A-Z]{1,5}$/.test(trimmed);
+    const delay    = isTicker ? 0 : 150;
+
     debounceRef.current = setTimeout(async () => {
-      const results = await searchTickers(v.trim());
+      const results = await searchTickers(trimmed);
       setSuggestions(results);
-    }, 200);
+    }, delay);
   }, []);
 
   const handleSelectSuggestion = useCallback((result: PolygonTickerResult) => {
@@ -643,7 +741,7 @@ export function WatchlistScreen() {
         {/* Search bar + dropdown (BUG-001: wrapper so dropdown is positioned below the search bar) */}
         <View style={styles.searchContainer}>
           <SearchBar value={query} onChange={handleQueryChange} />
-          <AutocompleteDropdown results={suggestions} onSelect={handleSelectSuggestion} />
+          <AutocompleteDropdown results={suggestions} query={query} onSelect={handleSelectSuggestion} />
         </View>
 
         {/* Watchlist items */}
@@ -663,7 +761,7 @@ export function WatchlistScreen() {
             contentContainerStyle={styles.list}
             ListFooterComponent={
               items.length > 0
-                ? <DataDelayFooter ticker={items[0]?.id ?? 'SPY'} timeframe="1D" />
+                ? <DataDelayFooter ticker={items[0]?.id ?? 'SPY'} timeframe="intraday" />
                 : null
             }
           />

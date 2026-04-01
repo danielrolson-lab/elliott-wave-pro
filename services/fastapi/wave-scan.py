@@ -563,6 +563,8 @@ def simple_wave_score(candles: list) -> dict | None:
         w3_len = abs(tail[3]["price"] - tail[2]["price"]) if len(tail) > 3 else 0
         if w1_len > 0:
             e3 = w3_len / w1_len
+            if e3 > 4.236:
+                return None  # Implausible extension — skip setup
             fib_ctx = f"W3 ext {e3:.2f}x"
             if e3 >= 1.618:
                 fib_score = 0.35

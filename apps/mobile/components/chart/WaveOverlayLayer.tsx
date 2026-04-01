@@ -43,11 +43,29 @@ import type { ChartLayoutParams } from './chartTypes';
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 
-const WAVE_IMPULSE_COLOR    = '#26A69A';   // green
-const WAVE_CORRECTIVE_COLOR = '#FF9800';   // amber
-const WAVE_BEARISH_COLOR    = '#EF5350';   // red
-const WAVE_ALT_COLOR        = '#8888a0';   // muted gray/purple for alt count
+const WAVE_IMPULSE_COLOR    = '#26A69A';   // green — impulse waves (1,3,5,B)
+const WAVE_CORRECTIVE_COLOR = '#FF9800';   // amber — corrective waves (2,4)
+const WAVE_BEARISH_COLOR    = '#EF5350';   // red   — bearish waves (A,C)
+const WAVE_ALT_COLOR        = '#FF69B4';   // hot pink — alt count
 const INVALIDATION_COLOR    = 'rgba(239,83,80,0.80)';
+
+// ── Degree-based label colors ─────────────────────────────────────────────────
+// Wave NUMBER labels use degree color; segment LINES use impulse/corrective/bearish.
+// This gives instant visual feedback on both degree and wave type.
+
+function getDegreeColor(timeframe: string): string {
+  switch (timeframe) {
+    case '1W':  return '#FFD700';   // gold    — Primary
+    case '1D':  return '#FFFFFF';   // white   — Intermediate
+    case '4h':  return '#00CED1';   // dark cyan — Minor
+    case '1h':  return '#20B2AA';   // teal    — Minute
+    case '30m': return '#B57BEE';   // lavender — Minuette
+    case '15m': return '#B57BEE';   // lavender — Minuette
+    case '5m':  return '#87CEEB';   // light blue — Sub-minuette
+    case '1m':  return '#90EE90';   // light green — Micro
+    default:    return '#AAAAAA';
+  }
+}
 
 // ── Degree notation ───────────────────────────────────────────────────────────
 
@@ -96,25 +114,26 @@ interface PivotData {
 }
 
 interface SerializedCount {
-  isBullish:  boolean;
-  pivots:     PivotData[];
-  labels:     string[];       // degree-notated, "alt-" prefix if alt
-  colorTypes: number[];       // 0/1/2 per wave segment
-  isAlt:      boolean;
+  isBullish:   boolean;
+  pivots:      PivotData[];
+  labels:      string[];       // degree-notated, "alt-" prefix if alt
+  colorTypes:  number[];       // 0/1/2 per wave segment
+  isAlt:       boolean;
+  degreeColor: string;         // label color based on timeframe degree
 }
 
 const NULL_COUNT: SerializedCount = {
-  isBullish:  true,
-  pivots:     [],
-  labels:     [],
-  colorTypes: [],
-  isAlt:      false,
+  isBullish:   true,
+  pivots:      [],
+  labels:      [],
+  colorTypes:  [],
+  isAlt:       false,
+  degreeColor: '#AAAAAA',
 };
 
 function serializeCount(
-  count:       WaveCount,
-  sliceOffset: number,
-  isAlt:       boolean,
+  count:  WaveCount,
+  isAlt:  boolean,
 ): SerializedCount {
   const waves = count.allWaves;
   if (!waves || waves.length < 2) return NULL_COUNT;
@@ -123,12 +142,12 @@ function serializeCount(
   if (!w1.startPivot || !w1.endPivot) return NULL_COUNT;
 
   const pivots: PivotData[] = [
-    { barIndex: w1.startPivot.index + sliceOffset, price: w1.startPivot.price },
+    { barIndex: w1.startPivot.index, price: w1.startPivot.price },
   ];
   for (const wave of waves) {
     if (!wave.endPivot) break;
     pivots.push({
-      barIndex: wave.endPivot.index + sliceOffset,
+      barIndex: wave.endPivot.index,
       price:    wave.endPivot.price,
     });
   }
@@ -142,7 +161,8 @@ function serializeCount(
     return isAlt ? `alt-${notated}` : notated;
   });
 
-  return { isBullish, pivots, labels, colorTypes, isAlt };
+  const degreeColor = isAlt ? WAVE_ALT_COLOR : getDegreeColor(tf);
+  return { isBullish, pivots, labels, colorTypes, isAlt, degreeColor };
 }
 
 // ── Worklet helpers ───────────────────────────────────────────────────────────
@@ -231,14 +251,15 @@ function labelPos(
 // ── Per-count overlay component ───────────────────────────────────────────────
 
 interface WaveCountOverlayProps {
-  serialized:  SharedValue<SerializedCount>;
-  translateX:  SharedValue<number>;
-  candleW:     SharedValue<number>;
-  layoutDV:    SharedValue<ChartLayoutParams>;
-  chartTop:    number;
-  chartDrawH:  number;
-  opacity:     number;
-  font:        SkFont | null;
+  serialized:   SharedValue<SerializedCount>;
+  translateX:   SharedValue<number>;
+  candleW:      SharedValue<number>;
+  layoutDV:     SharedValue<ChartLayoutParams>;
+  chartTop:     number;
+  chartDrawH:   number;
+  opacity:      number;
+  showLabels:   boolean;
+  font:         SkFont | null;
 }
 
 function WaveCountOverlay({
@@ -249,6 +270,7 @@ function WaveCountOverlay({
   chartTop,
   chartDrawH,
   opacity,
+  showLabels,
   font,
 }: WaveCountOverlayProps) {
 
@@ -314,39 +336,26 @@ function WaveCountOverlay({
   const lbl3 = useDerivedValue(() => serialized.value.labels[3] ?? '');
   const lbl4 = useDerivedValue(() => serialized.value.labels[4] ?? '');
 
-  // ── Per-wave label colors (gray for alt, wave-color for primary) ───────────
+  // ── Label colors — degree-based for primary, pink for alt ─────────────────
+  // Segment LINES keep impulse/corrective/bearish color for wave-type signal.
+  // Wave NUMBER labels use degree color so you can read both degree AND direction.
   const lbl0Color = useDerivedValue((): string => {
-    'worklet';
-    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
-    const ct = serialized.value.colorTypes[0] ?? 0;
-    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+    'worklet'; return serialized.value.degreeColor;
   });
   const lbl1Color = useDerivedValue((): string => {
-    'worklet';
-    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
-    const ct = serialized.value.colorTypes[1] ?? 0;
-    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+    'worklet'; return serialized.value.degreeColor;
   });
   const lbl2Color = useDerivedValue((): string => {
-    'worklet';
-    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
-    const ct = serialized.value.colorTypes[2] ?? 0;
-    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+    'worklet'; return serialized.value.degreeColor;
   });
   const lbl3Color = useDerivedValue((): string => {
-    'worklet';
-    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
-    const ct = serialized.value.colorTypes[3] ?? 0;
-    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+    'worklet'; return serialized.value.degreeColor;
   });
   const lbl4Color = useDerivedValue((): string => {
-    'worklet';
-    if (serialized.value.isAlt) return WAVE_ALT_COLOR;
-    const ct = serialized.value.colorTypes[4] ?? 0;
-    return ct === 0 ? WAVE_IMPULSE_COLOR : ct === 1 ? WAVE_CORRECTIVE_COLOR : WAVE_BEARISH_COLOR;
+    'worklet'; return serialized.value.degreeColor;
   });
 
-  // ── Segment / circle colors (gray for alt) ─────────────────────────────────
+  // ── Segment / circle colors (pink for alt, wave-type for primary) ──────────
   const impulseColor    = useDerivedValue((): string => {
     'worklet';
     return serialized.value.isAlt ? WAVE_ALT_COLOR : WAVE_IMPULSE_COLOR;
@@ -388,12 +397,12 @@ function WaveCountOverlay({
       {/* Circle markers at each pivot */}
       <Path path={circlePath} color={circleColor} style="stroke" strokeWidth={1.2} />
 
-      {/* Wave labels */}
-      <Text x={x1} y={y1} text={lbl0} font={font} color={lbl0Color} />
-      <Text x={x2} y={y2} text={lbl1} font={font} color={lbl1Color} />
-      <Text x={x3} y={y3} text={lbl2} font={font} color={lbl2Color} />
-      <Text x={x4} y={y4} text={lbl3} font={font} color={lbl3Color} />
-      <Text x={x5} y={y5} text={lbl4} font={font} color={lbl4Color} />
+      {/* Wave labels — hidden when showLabels=false */}
+      {showLabels && <Text x={x1} y={y1} text={lbl0} font={font} color={lbl0Color} />}
+      {showLabels && <Text x={x2} y={y2} text={lbl1} font={font} color={lbl1Color} />}
+      {showLabels && <Text x={x3} y={y3} text={lbl2} font={font} color={lbl2Color} />}
+      {showLabels && <Text x={x4} y={y4} text={lbl3} font={font} color={lbl3Color} />}
+      {showLabels && <Text x={x5} y={y5} text={lbl4} font={font} color={lbl4Color} />}
     </Group>
   );
 }
@@ -402,7 +411,6 @@ function WaveCountOverlay({
 
 export interface WaveOverlayLayerProps {
   waveCounts:      readonly WaveCount[];
-  sliceOffset:     number;
   translateX:      SharedValue<number>;
   candleW:         SharedValue<number>;
   layoutDV:        SharedValue<ChartLayoutParams>;
@@ -412,12 +420,13 @@ export interface WaveOverlayLayerProps {
   activeStopPrice: number;
   /** Show the second-probability alternate count (Part 2). */
   showAlt:         boolean;
+  /** Show wave number labels (1-5 / A-B-C) on pivot points. */
+  showWaveLabels:  boolean;
   font:            SkFont | null;
 }
 
 export function WaveOverlayLayer({
   waveCounts,
-  sliceOffset,
   translateX,
   candleW,
   layoutDV,
@@ -426,6 +435,7 @@ export function WaveOverlayLayer({
   chartAreaW,
   activeStopPrice,
   showAlt,
+  showWaveLabels,
   font,
 }: WaveOverlayLayerProps) {
   const primarySV   = useSharedValue<SerializedCount>(NULL_COUNT);
@@ -435,7 +445,7 @@ export function WaveOverlayLayer({
   // Sync serialized counts whenever inputs change
   useEffect(() => {
     primarySV.value = waveCounts[0]
-      ? serializeCount(waveCounts[0], sliceOffset, false)
+      ? serializeCount(waveCounts[0], false)
       : NULL_COUNT;
 
     if (showAlt && waveCounts[0] && waveCounts[1]) {
@@ -443,12 +453,12 @@ export function WaveOverlayLayer({
       const aProb = waveCounts[1].posterior.posterior;
       const withinThreshold = pProb - aProb <= 0.30;
       secondarySV.value = withinThreshold
-        ? serializeCount(waveCounts[1], sliceOffset, true)
+        ? serializeCount(waveCounts[1], true)
         : NULL_COUNT;
     } else {
       secondarySV.value = NULL_COUNT;
     }
-  }, [waveCounts, sliceOffset, showAlt, primarySV, secondarySV]);
+  }, [waveCounts, showAlt, primarySV, secondarySV]);
 
   useEffect(() => {
     stopPriceSV.value = activeStopPrice;
@@ -496,6 +506,7 @@ export function WaveOverlayLayer({
         chartTop={chartTop}
         chartDrawH={chartDrawH}
         opacity={0.40}
+        showLabels={showWaveLabels}
         font={font}
       />
 
@@ -508,6 +519,7 @@ export function WaveOverlayLayer({
         chartTop={chartTop}
         chartDrawH={chartDrawH}
         opacity={1.0}
+        showLabels={showWaveLabels}
         font={font}
       />
 

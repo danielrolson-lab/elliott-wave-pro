@@ -26,7 +26,7 @@ import {
   type NativeScrollEvent,
 } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
-import type { SkFont } from '@shopify/react-native-skia';
+import { useFont, type SkFont } from '@shopify/react-native-skia';
 import type { OHLCV } from '@elliott-wave-pro/wave-engine';
 import { RSIIndicator,    INDICATOR_H } from '../indicators/RSIIndicator';
 import { MACDIndicator }   from '../indicators/MACDIndicator';
@@ -54,7 +54,6 @@ export interface IndicatorPanelProps {
   candles:      readonly OHLCV[];
   translateX:   SharedValue<number>;
   candleW:      SharedValue<number>;
-  font:         SkFont | null;
   visiblePages?: VisiblePages;
 }
 
@@ -66,9 +65,9 @@ export function IndicatorPanel({
   candles,
   translateX,
   candleW,
-  font,
   visiblePages,
 }: IndicatorPanelProps) {
+  const font: SkFont | null = useFont(require('../../assets/fonts/Roboto-Regular.ttf'), 10);
   const { width: screenW } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [activePage, setActivePage] = useState<PageIndex>(0);

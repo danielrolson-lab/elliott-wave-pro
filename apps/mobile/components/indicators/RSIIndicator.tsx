@@ -16,6 +16,7 @@
 
 import React, { useEffect } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
+import { SkiaErrorBoundary } from '../common/SkiaErrorBoundary';
 import {
   Canvas,
   Path,
@@ -190,6 +191,7 @@ export function RSIIndicator({
   });
 
   return (
+    <SkiaErrorBoundary name="RSIIndicator" height={INDICATOR_H}>
     <Canvas style={[styles.canvas, { width: screenW, height: INDICATOR_H }]}>
       {/* Background */}
       <Rect x={0} y={0} width={screenW} height={INDICATOR_H} color={CHART_COLORS.background} />
@@ -229,6 +231,7 @@ export function RSIIndicator({
         </>
       )}
     </Canvas>
+    </SkiaErrorBoundary>
   );
 }
 

@@ -287,11 +287,19 @@ function checkImpulseHardRules(pivots: Pivot[], isBullish: boolean): HardRuleRes
   const violations: string[] = [];
   const w1Start = p0.price, w1End = p1.price, w2End = p2.price, w3End = p3.price, w4End = p4.price;
   const l1 = absDiff(w1End, w1Start), l3 = absDiff(w3End, w2End), l5 = absDiff(pivots[5].price, w4End);
+  // Rule 1: Wave 2 must not retrace more than 100% of Wave 1
   if (isBullish && w2End <= w1Start) violations.push("RULE1_W2_RETRACE_OVER_100");
   if (!isBullish && w2End >= w1Start) violations.push("RULE1_W2_RETRACE_OVER_100");
+  // Rule 2: Wave 3 must not be the shortest impulse wave
   if (l3 < l1 && l3 < l5) violations.push("RULE2_W3_SHORTEST");
-  const w1Low = Math.min(w1Start, w1End), w1High = Math.max(w1Start, w1End);
-  if (w4End > w1Low && w4End < w1High) violations.push("RULE3_W4_OVERLAP_W1");
+  // Guard: Wave 5 must have meaningful length (≥ 10% of Wave 1). Prevents
+  // phantom counts where W3 and W5 endpoints converge at the same price.
+  if (l5 < l1 * 0.10) violations.push("RULE2_W5_TOO_SHORT");
+  // Rule 3: Wave 4 must not enter Wave 1's price territory.
+  // For bullish: Wave 4 trough must be at or above Wave 1's peak (w1End).
+  // For bearish: Wave 4 peak must be at or below Wave 1's trough (w1End).
+  if (isBullish && w4End < w1End) violations.push("RULE3_W4_OVERLAP_W1");
+  if (!isBullish && w4End > w1End) violations.push("RULE3_W4_OVERLAP_W1");
   return { passed: violations.length === 0, violations };
 }
 
@@ -648,8 +656,28 @@ function rankAndNormalize(candidates: PatternCandidate[], config: EngineConfig):
       if (!hasTerminalDivergence) { c.score.total = clamp(c.score.total - 8, 0, 100); c.score.notes.push("Wave 5 lacks strong terminal divergence support"); }
     }
   }
-  const positive = candidates.map((c) => Math.max(1e-6, c.score.total)).reduce((a, b) => a + b, 0);
-  for (const c of candidates) c.confidence = clamp(c.score.total / positive, 0, 1);
+
+  // Recency bias: penalise candidates whose last pivot is far from the most
+  // recent candle. This ensures the engine surfaces the wave count that covers
+  // current price action, not a well-proportioned older completed pattern.
+  const allTs = candidates.flatMap((c) => c.pivots.map((p) => p.ts));
+  const maxTs = Math.max(...allTs);
+  const minTs = Math.min(...allTs);
+  const timeSpan = maxTs - minTs;
+  if (timeSpan > 0) {
+    for (const c of candidates) {
+      const lastPivotTs = c.pivots[c.pivots.length - 1].ts;
+      const staleness = (maxTs - lastPivotTs) / timeSpan; // 0 = current, 1 = oldest
+      if (staleness > 0.25) {
+        // Up to 12 point penalty for counts whose last pivot is in the oldest 75%
+        const penalty = clamp((staleness - 0.25) / 0.75 * 12, 0, 12);
+        c.score.total = clamp(c.score.total - penalty, 0, 100);
+        c.score.notes.push("Staleness: last pivot not at current price action");
+      }
+    }
+  }
+
+  for (const c of candidates) c.confidence = clamp(c.score.total / 100, 0, 1);
   let sorted = [...candidates].sort((a, b) => {
     if (b.confidence !== a.confidence) return b.confidence - a.confidence;
     if (b.score.total !== a.score.total) return b.score.total - a.score.total;

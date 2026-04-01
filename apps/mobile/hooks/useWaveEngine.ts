@@ -36,11 +36,17 @@ const EMPTY: WaveCount[] = [];
 // Shorter timeframes need a smaller minimum-swing floor to detect enough pivots.
 const MIN_SWING_PCT: Readonly<Record<string, number>> = {
   '1m':  0.00015,
+  '5m':  0.00020,
   '15m': 0.00025,
+  '30m': 0.00030,
+  '1h':  0.00035,
+  '4h':  0.00040,
+  '1D':  0.00050,
+  '1W':  0.00080,
 };
 
 function minPivots(timeframe: string): number {
-  return timeframe === '1m' ? 4 : 6;
+  return (timeframe === '1m' || timeframe === '5m' || timeframe === '15m') ? 4 : 6;
 }
 
 // ── Degree mapping ─────────────────────────────────────────────────────────────
@@ -171,10 +177,13 @@ function mapV3CandidateToWaveCount(
     const waveOrigin = pivots[0].price;
     const lastPivot  = pivots[pivots.length - 1].price;
     const waveLen    = Math.abs(lastPivot - waveOrigin);
-    const dir        = candidate.isBullish ? 1 : -1;
-    t1 = lastPivot + dir * waveLen * 1.0;
-    t2 = lastPivot + dir * waveLen * 1.618;
-    t3 = lastPivot + dir * waveLen * 2.618;
+    // Only project targets when the wave span is at least 0.5% of price
+    if (lastPivot > 0 && waveLen / lastPivot >= 0.005) {
+      const dir = candidate.isBullish ? 1 : -1;
+      t1 = lastPivot + dir * waveLen * 1.0;
+      t2 = lastPivot + dir * waveLen * 1.618;
+      t3 = lastPivot + dir * waveLen * 2.618;
+    }
   }
   const targets: [number, number, number] = [t1, t2, t3];
 
@@ -238,38 +247,59 @@ function mapV3CandidateToWaveCount(
 export interface UseWaveEngineResult {
   waveCounts: WaveCount[];
   sliceOffset: number;
+  isHistorical: boolean;
 }
 
 export function useWaveEngine(
   ticker: string,
   timeframe: string,
   candles: readonly OHLCV[],
+  viewportStart?: number,
 ): UseWaveEngineResult {
   const setCounts = useWaveCountStore((s) => s.setCounts);
   const [result, setResult] = useState<UseWaveEngineResult>({
     waveCounts: EMPTY,
     sliceOffset: 0,
+    isHistorical: false,
   });
   const prevLen = useRef(0);
+  const prevViewportRef = useRef(-1);
   const v3EngineStateRef = useRef<V3EngineState>({});
 
   // Reset on ticker/timeframe change — clear both local state and the store
   // so CandlestickChart immediately removes stale overlays from the prior timeframe.
   useEffect(() => {
     prevLen.current = 0;
+    prevViewportRef.current = -1;
     v3EngineStateRef.current = {};
-    setResult({ waveCounts: EMPTY, sliceOffset: 0 });
+    setResult({ waveCounts: EMPTY, sliceOffset: 0, isHistorical: false });
     setCounts(`${ticker}_${timeframe}`, []);
   }, [ticker, timeframe, setCounts]);
 
   useEffect(() => {
     if (candles.length < 20) return;
-    if (candles.length === prevLen.current) return;
+
+    const HIST_THRESHOLD = 50; // bars from live edge to trigger historical mode
+    const liveSliceOffset = Math.max(0, candles.length - MAX_CANDLES);
+    const isHistMode = viewportStart !== undefined
+      && viewportStart < liveSliceOffset - HIST_THRESHOLD;
+
+    // In live mode: skip if no new candle
+    if (!isHistMode && candles.length === prevLen.current) return;
+    // In historical mode: skip if viewport hasn't moved significantly
+    if (isHistMode && viewportStart === prevViewportRef.current) return;
 
     prevLen.current = candles.length;
+    if (isHistMode && viewportStart !== undefined) prevViewportRef.current = viewportStart;
 
-    const sliceOffset = Math.max(0, candles.length - MAX_CANDLES);
-    const slice = candles.slice(sliceOffset) as OHLCV[];
+    // Compute slice
+    const sliceOffset = isHistMode
+      ? Math.max(0, viewportStart! - 20)  // 20-bar context before viewport
+      : liveSliceOffset;
+    const sliceEnd = isHistMode
+      ? Math.min(candles.length, viewportStart! + MAX_CANDLES)
+      : candles.length;
+    const slice = candles.slice(sliceOffset, sliceEnd) as OHLCV[];
 
     // Step 1: detect pivots using existing v1/v2 pivot detector
     const swingFloor = MIN_SWING_PCT[timeframe] ?? 0.0005;
@@ -332,10 +362,10 @@ export function useWaveEngine(
       );
     }
 
-    const next: UseWaveEngineResult = { waveCounts: top4, sliceOffset };
+    const next: UseWaveEngineResult = { waveCounts: top4, sliceOffset, isHistorical: isHistMode };
     setResult(next);
     setCounts(`${ticker}_${timeframe}`, top4);
-  }, [candles, ticker, timeframe, setCounts]);
+  }, [candles, viewportStart, ticker, timeframe, setCounts]);
 
   return result;
 }

@@ -204,11 +204,11 @@ async function main(): Promise<void> {
   });
   await icon.writeAsync(path.join(ASSETS, 'icon.png'));
 
-  // 2. Splash screen icon — 512×512
-  console.log('  splash-icon.png (512×512)...');
+  // 2. Splash screen icon — 2048×2048 (high-res for 3x screens; Expo scales down cleanly)
+  console.log('  splash-icon.png (2048×2048)...');
   const splash = await buildIcon({
-    size: 512, bgColor: BLACK, waveColor: WAVE_COLOR,
-    waveThickness: 7, showLabel: true, labelSize: 70,
+    size: 2048, bgColor: BLACK, waveColor: WAVE_COLOR,
+    waveThickness: 28, showLabel: true, labelSize: 280,
   });
   await splash.writeAsync(path.join(ASSETS, 'splash-icon.png'));
 

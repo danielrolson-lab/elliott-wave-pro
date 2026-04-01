@@ -264,11 +264,14 @@ function ProbabilityBar({ probability, color }: { probability: number; color: st
 type WaveCountWithV3 = WaveCount & { _v3?: PatternCandidate };
 
 interface ScenarioCardProps {
-  count:        WaveCountWithV3;
-  rank:         number;
-  isExpanded:   boolean;
-  currentPrice: number;
-  onPress:      () => void;
+  count:             WaveCountWithV3;
+  rank:              number;
+  isExpanded:        boolean;
+  currentPrice:      number;
+  onPress:           () => void;
+  /** Pre-computed HTF context line from ScenarioPanel (shown when Multi-Degree mode active) */
+  htfContextLine?:   string | null;
+  htfContextColor?:  string;
 }
 
 export function ScenarioCard({
@@ -277,6 +280,8 @@ export function ScenarioCard({
   isExpanded,
   currentPrice,
   onPress,
+  htfContextLine = null,
+  htfContextColor = '#B8860B',
 }: ScenarioCardProps) {
   const [showConfDetail, setShowConfDetail] = useState(false);
 
@@ -305,9 +310,10 @@ export function ScenarioCard({
   );
 
   const [t1, t2, t3] = count.targets;
-  const t1Label = useMemo(() => fibAnnotate(t1, fibLevels), [t1, fibLevels]);
-  const t2Label = useMemo(() => fibAnnotate(t2, fibLevels), [t2, fibLevels]);
-  const t3Label = useMemo(() => fibAnnotate(t3, fibLevels), [t3, fibLevels]);
+  const targetsValid = t1 > 0 && Math.abs(t1 - t2) > 0.05 && Math.abs(t1 - t3) > 0.05;
+  const t1Label = useMemo(() => targetsValid ? fibAnnotate(t1, fibLevels) : '—', [t1, fibLevels, targetsValid]);
+  const t2Label = useMemo(() => targetsValid ? fibAnnotate(t2, fibLevels) : '—', [t2, fibLevels, targetsValid]);
+  const t3Label = useMemo(() => targetsValid ? fibAnnotate(t3, fibLevels) : '—', [t3, fibLevels, targetsValid]);
   const stopLabel = useMemo(
     () => fibAnnotate(count.stopPrice, fibLevels),
     [count.stopPrice, fibLevels],
@@ -381,6 +387,13 @@ export function ScenarioCard({
           </View>
         </Pressable>
       </View>
+
+      {/* ── HTF context line (Multi-Degree mode) ── */}
+      {htfContextLine != null && (
+        <Text style={[styles.htfContext, { color: htfContextColor }]} numberOfLines={2}>
+          {htfContextLine}
+        </Text>
+      )}
 
       {/* E7: confidence detail (expandable) */}
       {showConfDetail && (
@@ -570,6 +583,14 @@ const styles = StyleSheet.create({
     color:    '#fb923c',  // amber
     fontSize: 9,
     fontStyle: 'italic',
+  },
+
+  // HTF "Fits within:" context line (Multi-Degree mode)
+  htfContext: {
+    color:      '#B8860B',  // dim gold
+    fontSize:   10,
+    fontStyle:  'italic',
+    marginTop:  2,
   },
 
   // Target cells (Row 2)

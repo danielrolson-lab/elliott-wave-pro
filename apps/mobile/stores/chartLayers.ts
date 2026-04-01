@@ -14,7 +14,12 @@ const mmkvStorage = {
   removeItem: (key: string) => storage.delete(key),
 };
 
+export type EWMode = 'now' | 'multi-degree' | 'history';
+
 export interface ChartLayersState {
+  // EW display mode — mutually exclusive
+  ewMode: EWMode;
+
   // Row 1 — Price overlays
   ma20:        boolean;  // ema21
   ma50:        boolean;  // ema50
@@ -41,13 +46,15 @@ export interface ChartLayersState {
   altCount:     boolean;  // alternate count overlay
 
   // Actions
-  toggle: (key: keyof Omit<ChartLayersState, 'toggle' | 'reset'>) => void;
+  setEWMode: (mode: EWMode) => void;
+  toggle: (key: keyof Omit<ChartLayersState, 'toggle' | 'reset' | 'setEWMode'>) => void;
   reset:  () => void;
 }
 
 const DEFAULTS = {
+  ewMode: 'now' as EWMode,
   ma20: true, ma50: true, ma200: false, vwap: false, bb: false,
-  ewWaves: true, fibLevels: false, ewChannel: false, invalidation: true,
+  ewWaves: true, fibLevels: true, ewChannel: false, invalidation: true,
   showRSI: true, showMACD: false, showVolume: true, showCVD: false, showGEX: false,
   darkPool: false, optionsFlow: false, sentiment: false, waveLabels: true, altCount: false,
 };
@@ -56,6 +63,7 @@ export const useChartLayersStore = create<ChartLayersState>()(
   persist(
     immer((set) => ({
       ...DEFAULTS,
+      setEWMode: (mode) => set((s) => { s.ewMode = mode; }),
       toggle: (key) => set((s) => { (s as unknown as Record<string, boolean>)[key] = !(s as unknown as Record<string, boolean>)[key]; }),
       reset:  () => set(() => ({ ...DEFAULTS })),
     })),

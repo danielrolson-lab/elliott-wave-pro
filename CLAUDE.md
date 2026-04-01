@@ -428,3 +428,230 @@ See **Phase 2 Readiness** section at the bottom of this file.
 ### D10 — Launch checklist and handoff document
 - [x] `docs/LAUNCH_CHECKLIST.md` — infrastructure, credentials, assets, testing, legal, submission sections
 - [x] `docs/HANDOFF.md` — architecture decisions, known limitations, post-launch features, infrastructure cost estimates
+# Elliott Wave Pro — Project Context for Claude Code
+
+## Identity
+Project: ~/elliott-wave-pro
+Developer: Dan Olson, Launch Standards LLC
+Expo Account: danzimal
+Apple ID: olydan1@aol.com
+Apple Team ID: 2YSL5AXL3P
+Bundle ID: com.elliottwave.pro
+App Store Connect App ID: 6761231249
+Expo Token: l1tS-OlgfeboqPrjHsVF1JL48Hnn7ByBt05HlUzV
+Polygon API Key: HG_UvIINwhk9EwY7XQxSTu6WcwvFg8cQ (capital I, I, N — verified in Vercel)
+
+## Services
+- Vercel proxy: https://elliott-wave-pro-proxy.vercel.app (live, all routes verified)
+- Fly.io FastAPI: https://elliott-wave-scanner.fly.dev
+- Supabase: https://hoeyoadzzysxcgizpzuy.supabase.co
+
+## Current Status
+- Latest live build: v45 (both EAS submits succeeded on 2026-03-29)
+- No more EAS builds until explicitly instructed — Xcode simulator for all testing
+- Simulator running locally via Xcode 26 on Mac Studio (iPhone 17 Pro, iOS 26.4)
+- V3 wave engine integrated and exported from index.ts
+- AI commentary working via Vercel proxy + Anthropic API
+- Polygon Stocks Starter plan active ($29/mo)
+- Supabase email confirmation disabled for testing
+- Build succeeds cleanly — all errors are runtime, not compile
+
+## Wave Confluence Feature (added 2026-03-29)
+- Button in chart screen below ScenarioPanel: "◈ Wave Confluence" pill
+- Opens bottom sheet modal (75% height) via `WaveConfluenceModal.tsx`
+- Data layer: `hooks/useWaveConfluence.ts`
+  - Fetches 5 TFs (5m, 15m, 30m, 1h, 1D) via Polygon REST in parallel
+  - Runs wave engine on each TF's candles
+  - Confluence score = (directionScore × 0.5) + (positionScore × 0.3) + (avgConfidence × 0.2)
+  - Cache TTL: 5 minutes; cache key rounds to nearest 5-min bucket
+  - Score labels: ≥0.80 Strong, ≥0.60 Moderate, ≥0.40 Mixed, <0.40 No Confluence
+- Modal shows: summary card, 5 TF rows (sorted by confidence), AI insight
+- Tapping a TF row closes modal and switches chart to that timeframe
+- Background auto-fetch 2s after chart opens (low-priority)
+
+## EW Mode Selector (added 2026-03-29)
+State: `ewMode: EWMode` in `stores/chartLayers.ts`, persisted via MMKV.
+Three mutually exclusive modes (radio buttons in Layers panel):
+
+**EW Now (default):** Current behavior — best-fit pattern for visible window. No changes.
+
+**Multi-Degree:** Fetches the next-higher TF via `HTF_MAP`:
+  1m→15m, 5m→1h, 15m→4h, 30m→4h, 1h→1D, 4h→1W, 1D→1W
+  Runs wave engine on HTF candles; maps HTF pivot timestamps → current TF bar indices.
+  Renders with `MultiDegreeOverlayLayer.tsx` (gold (I)(II)(III) labels, 7px circles).
+  Computation in `app/chart.tsx`; fetch cached per ticker+HTF combo in `htfCandlesRef`.
+
+**Wave History:** Overlapping window scan on last 200 candles.
+  windowSize = min(80, floor(n/2)); stepSize = floor(windowSize × 0.4); 40% overlap.
+  Only keeps COMPLETE patterns with confidence > 0.5.
+  Deduplication: skip if >60% pivot index overlap with existing pattern.
+  Capped at 6 patterns; each gets a distinct color from `HISTORY_COLORS` in `WaveHistoryLayer.tsx`.
+  Rendered with `WaveHistoryLayer.tsx`; dashed lines at 70% opacity.
+  Scan runs async via setTimeout(0) to avoid blocking UI; `historyScanning` flag shows "Scanning…" overlay.
+
+## Active Runtime Errors (fix in this order)
+1. "Text nodes are not supported yet" — crash in Charts tab
+   - Triggers from upsertCandles in marketData.ts:80 → usePolygonCandles.ts:176
+   - Bare string/number rendered directly in a View without <Text> wrapper
+   - Search all chart-related TSX files for unwrapped JSX expressions
+
+2. React-Fabric build error — HostPlatformViewEventEmitter.h not found
+   - Add HEADER_SEARCH_PATHS for React-Fabric in Podfile post_install block
+   - Paths to add: $(PODS_ROOT)/Headers/Public/React-RCTFabric,
+     $(PODS_ROOT)/Headers/Public/ReactCommon,
+     $(PODS_ROOT)/Headers/Private/React-Fabric
+
+3. PIF transfer session error ("unable to initiate PIF transfer session")
+   - Transient Xcode lock — kill stale processes, nuke DerivedData, rebuild
+
+## Wave Engine Architecture
+Two engines in packages/wave-engine/src/:
+1. wave-rules.ts — v1, deprecated, kept as reference only
+2. elliott-wave-engine-v3.ts — ACTIVE engine
+   - Multi-hypothesis, Bayesian scoring, corrective patterns, hysteresis
+   - Scoring weights: Fibonacci 25%, Internal structure 20%, Volume 12%,
+     Momentum 12%, Time 10%, Channel 8%, Degree 8%, HTF alignment 5%
+
+## Milky Way Scanner vs Chart Tab — Known Intentional Difference
+The Milky Way bulk scanner (services/fastapi/wave-scan.py → simple_wave_score()) uses a
+completely different algorithm than the chart tab (generateWaveCountsV3). This is by design:
+- Scanner: price location in 20-bar high/low range → wave position heuristic. Fast enough to
+  scan 130+ tickers in parallel. For 15m/30m/1h/4h, resamples from 5m bars.
+- Chart tab: Full V3 engine — ATR pivot detection, Bayesian multi-hypothesis, Fibonacci scoring.
+Result: Same ticker on same timeframe can show different wave counts. NOT a bug.
+Fix applied: "FAST SCAN" badge on each SetupCard + "Fast scan · positional heuristic · may differ
+from chart view" subtitle on MilkyWayScreen.
+
+## Xcode 26 Local Build Fixes (applied to Pods directly — reapply after every pod install)
+- Pods/fmt/include/fmt/format.h: FMT_STRING macro simplified to passthrough
+- Pods/fmt/include/fmt/base.h: FMT_USE_CONSTEVAL=0 added
+- Pods/PurchasesHybridCommon/.../SKProduct+HybridAdditions.swift:
+  SubscriptionPeriod qualified as RevenueCat.SubscriptionPeriod
+- Podfile post_install: deployment 14.0, EXConstants skip, fmt c++20,
+  SWIFT_SUPPRESS_WARNINGS for PurchasesHybridCommon,
+  HEADER_SEARCH_PATHS for React-Fabric
+
+## Polygon Plan Gaps
+- VIX/10Y/DXY: needs Indices Starter ($29/mo separate) — show placeholder if absent
+- Options chain/IV surface: needs Options Starter ($29/mo separate)
+- Real-time WebSocket: needs Developer plan
+- Level 2 depth: NOT available on any Polygon plan — remove L2 button from UI
+
+## Rules
+- Always use npx expo install for Expo packages, never pnpm add
+- Never run eas build without explicit instruction
+- Run npx expo install --fix after any dependency change
+- ascAppId goes in submit.production.ios in eas.json, not build section
+- Do not use npx expo run:ios — always build via Xcode (CMD+SHIFT+K clean, CMD+R build)
+- Read CLAUDE.md before starting any task
+
+## Self-QA Commands (run after every fix)
+cd ~/elliott-wave-pro/apps/mobile && npx tsc --noEmit 2>&1 | tail -10
+npx expo export --platform ios 2>&1 | grep -E "error:|Error:|Cannot find" | head -10
+cd ~/elliott-wave-pro/apps/mobile/ios && xcodebuild -workspace ElliottWavePro.xcworkspace -scheme ElliottWavePro -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -configuration Debug build 2>&1 | grep -E "error:|Build succeeded|BUILD FAILED" | head -20
+
+## Open Bugs — Fix in Priority Order
+
+### CRITICAL — Runtime Crashes
+BUG-TEXT-01: "Text nodes are not supported yet" on Charts tab
+  - See Active Runtime Errors #1 above
+
+### CRITICAL — Wave Engine
+BUG-017: All tickers show Wave 5
+  FIX 1: Adaptive ATR multiplier in pivot-detection.ts
+    1m=1.5, 5m=1.2, 15m=1.0, 30m=0.8, 1h=0.6, 4h=0.5, 1D=0.4, 1W=0.3
+  FIX 2: forming_w5 partial count bias in elliott-wave-engine-v3.ts
+    Reduce forming_w5 score.total by 15 points
+    Add note: "Partial count — Wave 5 forming, not confirmed"
+  FIX 3: Wave 5 posterior threshold enforcement in rankAndNormalize
+    If top candidate is complete impulse AND confidence < wave5PosteriorThreshold
+    AND forming_w3 or forming_w4 scores within 10 points, prefer the lower wave
+
+BUG-018 + BUG-010: Elliott Wave labels (1,2,3,4,5,A,B,C) missing from chart canvas
+  - Find Skia chart renderer overlay layer
+  - Log raw wave engine pivot output for one ticker before touching renderer
+  - Confirm data structure matches overlay expectations
+  - Connect pivot output to overlay, render labels at correct pivot points
+
+BUG-020: Wave count does not recalculate on timeframe change
+  - Wire timeframe change events to trigger full wave reanalysis
+  - Analysis must be timeframe-specific
+
+### HIGH
+BUG-021: Crosshair HUD missing
+  - On scrub: show OHLC, volume, VWAP deviation, candle delta, % change from
+    prior close, dark pool and CVD data if live
+  - Position HUD so it does not obscure the candle being inspected
+
+BUG-022: Scenario cards expand but have no collapse mechanic
+  - Add toggle: tap expanded card to collapse
+  - Only one card expanded at a time
+
+BUG-023: Chart canvas missing legends, axis labels, line labels
+  - Add: price axis (Y), time axis (X), legend for MA periods and RSI, wave label legend
+
+BUG-024: Flow tab / IV Surface showing no data
+  - Verify Polygon options endpoint called correctly
+  - Default to SPY if no ticker selected
+  - Surface errors to UI instead of spinning
+
+BUG-009: Scenario cards 2 and 3 not tappable on Chart screen
+  - Only first card responds to onPress — fix touch handler on all cards
+
+BUG-015 + BUG-032: Home screen blank, bottom half dead space
+  - Show cached last-known index data while fresh data loads
+  - Add Watchlist section below MACRO row: ticker, price, % change, wave position
+  - Tapping navigates to Chart view
+
+BUG-016: No ticker label on Chart screen
+  - Add ticker symbol prominently at top of chart
+
+BUG-026 + BUG-003: Watchlist search not filtering progressively
+  - Typing "AAPL" returns results from "A" instead of narrowing
+  - Exact ticker match must be result #1
+  - Fix stale closure on input state if present
+
+BUG-002: Watchlist search freezes after 2 tickers added
+  - Reset search input and results state after each successful add
+
+BUG-013 + BUG-014: Options Chain and IV Surface tabs infinite loading
+  - Default to SPY if no ticker selected
+  - Verify Polygon options endpoint and API key
+  - Surface errors to UI
+
+BUG-027 + BUG-028: Flow scanner shows hardcoded "9 tickers"
+  - Replace with user's live watchlist
+  - Fallback if empty: SPY, QQQ, AAPL, TSLA, NVDA, MSFT, AMZN, META, GS
+  - Display actual tickers being scanned in UI
+
+BUG-029: Home screen has no edit capability
+  - Add Edit button to add, remove, reorder tickers
+
+BUG-030: Home screen ticker cells not tappable
+  - Tap must navigate to Chart view, no inline expansion
+
+### MEDIUM
+BUG-033: No time horizon selector on home screen
+  - Add 1D/1W/1M/3M pill toggle below market session badge
+  - Updates data context for all home screen cells
+
+BUG-031: Home screen ticker cards should reflect selected time horizon (BUG-033)
+
+BUG-001: Watchlist search results overlap input field
+  - Fix layout so results render below input without covering it
+
+### LOW / POST-LAUNCH
+BUG-035: Reanimated shared values read directly during render instead of .get()
+  - 30+ console warnings — fix after launch
+
+BUG-025: Settings tab is bare — shelved for post-launch
+
+## Completed — Do Not Redo
+- BUG-034: Vercel proxy fixed
+- BUG-019: Anthropic API key confirmed in Vercel env vars
+- BUG-036: Podfile updated to C++20 for React-jsi and React-perflogger
+- BUG-037: expo-print, expo-file-system, expo-sharing, expo-clipboard,
+  react-native-view-shot all installed
+- BUG-038: RevenueCat pod updated, SWIFT_SUPPRESS_WARNINGS added
+- Polygon API key corrected in Vercel (was lowercase l, now capital I)
+- Wave engine: W3 ratio tolerance, RSI true divergence, MTF weight redistribution

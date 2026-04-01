@@ -65,10 +65,15 @@ export function SetupCard({ setup, rank, onPress, showTimeframe }: Props) {
         <Text style={styles.targetLabel}>R/R <Text style={styles.targetVal}>{setup.riskReward.toFixed(1)}x</Text></Text>
       </View>
 
-      {/* Fib context */}
-      {setup.fibContext ? (
-        <Text style={styles.fibCtx}>{setup.fibContext}</Text>
-      ) : null}
+      {/* Fib context + fast scan badge */}
+      <View style={styles.footerRow}>
+        {setup.fibContext ? (
+          <Text style={styles.fibCtx}>{setup.fibContext}</Text>
+        ) : <View />}
+        <View style={styles.fastScanBadge}>
+          <Text style={styles.fastScanText}>FAST SCAN</Text>
+        </View>
+      </View>
     </Pressable>
   );
 }
@@ -99,5 +104,8 @@ const styles = StyleSheet.create({
   targetsRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 6 },
   targetLabel: { color: DARK.textMuted, fontSize: 11 },
   targetVal: { color: DARK.textPrimary, fontWeight: '600' },
-  fibCtx: { color: DARK.textMuted, fontSize: 10, fontStyle: 'italic' },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  fibCtx: { color: DARK.textMuted, fontSize: 10, fontStyle: 'italic', flex: 1 },
+  fastScanBadge: { backgroundColor: 'rgba(107,114,128,0.15)', borderRadius: 3, paddingHorizontal: 5, paddingVertical: 2, marginLeft: 8 },
+  fastScanText: { color: '#6b7280', fontSize: 8, fontWeight: '700', letterSpacing: 0.5 },
 });
