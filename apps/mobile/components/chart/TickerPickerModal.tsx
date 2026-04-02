@@ -43,32 +43,75 @@ import { DARK } from '../../theme/colors';
 
 // ── Polygon search ─────────────────────────────────────────────────────────
 
-const POLYGON_API_KEY = process.env['EXPO_PUBLIC_POLYGON_API_KEY'] ?? '';
+const POLYGON_API_KEY  = process.env['EXPO_PUBLIC_POLYGON_API_KEY'] ?? '';
+const POLYGON_BASE     = 'https://api.polygon.io';
 
 interface TickerResult {
   ticker: string;
   name:   string;
 }
 
+// Well-known liquid tickers get a relevance boost
+const WELL_KNOWN = new Set([
+  'SPY','QQQ','AAPL','TSLA','NVDA','MSFT','AMZN','META','GOOGL','GOOG',
+  'GS','SLV','GLD','IWM','DIA','TLT','VXX','VIX','XLF','XLK','ARKK',
+  'SQQQ','TQQQ','SPXU','UPRO','UVXY','SVXY','INTC','AMD','NFLX','UBER',
+]);
+
+function scoreResult(result: TickerResult, query: string): number {
+  const q      = query.toUpperCase().trim();
+  const ticker = result.ticker.toUpperCase();
+  const name   = (result.name ?? '').toUpperCase();
+  let score = 0;
+
+  if (ticker === q)              score += 1000;
+  else if (ticker.startsWith(q)) score += 500;
+  else if (ticker.includes(q))   score += 100;
+  else if (name.startsWith(q))   score += 50;
+  else if (name.includes(q))     score += 10;
+
+  // Penalise longer tickers when query is a prefix (SPY beats SPYG)
+  if (ticker !== q) score -= ticker.length * 2;
+
+  if (WELL_KNOWN.has(ticker)) score += 25;
+
+  return score;
+}
+
 async function searchTickers(query: string): Promise<TickerResult[]> {
-  if (!query || query.length < 1) return [];
-  const url =
-    `https://api.polygon.io/v3/reference/tickers` +
-    `?search=${encodeURIComponent(query)}&active=true&limit=12&apiKey=${POLYGON_API_KEY}`;
-  try {
-    const res  = await fetch(url);
-    if (!res.ok) return [];
-    const json = await res.json() as { results?: TickerResult[] };
-    const results = json.results ?? [];
-    const upper = query.toUpperCase();
-    return results.sort((a, b) => {
-      const aRank = a.ticker === upper ? 0 : a.ticker.startsWith(upper) ? 1 : 2;
-      const bRank = b.ticker === upper ? 0 : b.ticker.startsWith(upper) ? 1 : 2;
-      return aRank - bRank;
-    });
-  } catch {
-    return [];
+  if (!query || query.trim().length < 1) return [];
+  const q = query.trim().toUpperCase();
+
+  // Two parallel requests: fuzzy name/description search + exact ticker lookup.
+  // The exact lookup guarantees tickers like SLV appear even if not in the
+  // top fuzzy results.
+  const [fuzzyRes, exactRes] = await Promise.all([
+    fetch(`${POLYGON_BASE}/v3/reference/tickers?search=${encodeURIComponent(q)}&active=true&limit=50&apiKey=${POLYGON_API_KEY}`)
+      .then((r) => r.ok ? r.json() as Promise<{ results?: TickerResult[] }> : { results: [] })
+      .catch(() => ({ results: [] as TickerResult[] })),
+    fetch(`${POLYGON_BASE}/v3/reference/tickers?ticker=${encodeURIComponent(q)}&active=true&limit=1&apiKey=${POLYGON_API_KEY}`)
+      .then((r) => r.ok ? r.json() as Promise<{ results?: TickerResult[] }> : { results: [] })
+      .catch(() => ({ results: [] as TickerResult[] })),
+  ]);
+
+  const fuzzy = (fuzzyRes as { results?: TickerResult[] }).results ?? [];
+  const exact = ((exactRes as { results?: TickerResult[] }).results ?? [])[0] ?? null;
+
+  // Score and sort
+  const scored = fuzzy
+    .map((r) => ({ r, score: scoreResult(r, q) }))
+    .sort((a, b) => b.score - a.score);
+
+  // Push noisy results (containing `:` or spaces) to the bottom
+  const clean = scored.filter(({ r }) => !r.ticker.includes(':') && !r.ticker.includes(' '));
+  const noisy = scored.filter(({ r }) =>  r.ticker.includes(':') || r.ticker.includes(' '));
+  const ranked = [...clean, ...noisy].map(({ r }) => r);
+
+  // Guarantee exact match is position 0
+  if (exact && ranked[0]?.ticker !== exact.ticker) {
+    return [exact, ...ranked.filter((r) => r.ticker !== exact.ticker)].slice(0, 10);
   }
+  return ranked.slice(0, 10);
 }
 
 // ── Props ──────────────────────────────────────────────────────────────────
@@ -101,21 +144,30 @@ export function TickerPickerModal({ visible, onClose, onSelect, currentTicker }:
     }
   }, [visible]);
 
-  // Debounced search
+  // Debounced search — matches watchlist logic:
+  //   · min 2 chars to trigger
+  //   · 0 ms delay for pure uppercase tickers (^[A-Z]{1,5}$)
+  //   · 150 ms delay for company-name queries
   const handleQueryChange = useCallback((v: string) => {
     setQuery(v);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!v.trim()) {
+
+    const trimmed = v.trim();
+    if (trimmed.length < 2) {
       setResults([]);
       setSearching(false);
       return;
     }
+
     setSearching(true);
+    const isTicker = /^[A-Z]{1,5}$/.test(trimmed);
+    const delay    = isTicker ? 0 : 150;
+
     debounceRef.current = setTimeout(async () => {
-      const found = await searchTickers(v.trim());
+      const found = await searchTickers(trimmed);
       setResults(found);
       setSearching(false);
-    }, 200);
+    }, delay);
   }, []);
 
   const handleSelect = useCallback((ticker: string, name: string) => {
@@ -130,6 +182,13 @@ export function TickerPickerModal({ visible, onClose, onSelect, currentTicker }:
 
   const renderResult = useCallback(({ item }: ListRenderItemInfo<TickerResult>) => {
     const isCurrent = item.ticker === currentTicker;
+    // Highlight the matched portion of the ticker
+    const q      = query.trim().toUpperCase();
+    const idx    = item.ticker.toUpperCase().indexOf(q);
+    const before = idx >= 0 ? item.ticker.slice(0, idx) : item.ticker;
+    const match  = idx >= 0 ? item.ticker.slice(idx, idx + q.length) : '';
+    const after  = idx >= 0 ? item.ticker.slice(idx + q.length) : '';
+
     return (
       <TouchableOpacity
         style={[styles.resultRow, isCurrent && styles.resultRowActive]}
@@ -137,13 +196,19 @@ export function TickerPickerModal({ visible, onClose, onSelect, currentTicker }:
         activeOpacity={0.7}
       >
         <Text style={[styles.resultTicker, isCurrent && styles.resultTickerActive]}>
-          {item.ticker}
+          {match ? (
+            <>
+              <Text style={styles.tickerDim}>{before}</Text>
+              <Text style={styles.tickerMatch}>{match}</Text>
+              <Text style={styles.tickerDim}>{after}</Text>
+            </>
+          ) : item.ticker}
         </Text>
         <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
         {isCurrent && <Text style={styles.currentDot}>●</Text>}
       </TouchableOpacity>
     );
-  }, [currentTicker, handleSelect]);
+  }, [currentTicker, handleSelect, query]);
 
   const keyExtractor = useCallback((item: TickerResult) => item.ticker, []);
 
@@ -228,7 +293,11 @@ export function TickerPickerModal({ visible, onClose, onSelect, currentTicker }:
           <>
             {results.length > 0 && (
               <>
-                <Text style={styles.sectionLabel}>RESULTS</Text>
+                <Text style={styles.sectionLabel}>
+                  {results[0]?.ticker.toUpperCase() === query.trim().toUpperCase()
+                    ? `Exact match + ${results.length - 1} similar`
+                    : `${results.length} results for "${query.trim().toUpperCase()}"`}
+                </Text>
                 <FlatList
                   data={results}
                   keyExtractor={keyExtractor}
@@ -369,6 +438,13 @@ const styles = StyleSheet.create({
   currentDot: {
     color:    '#60a5fa',
     fontSize: 8,
+  },
+  tickerDim: {
+    color:   DARK.textMuted,
+  },
+  tickerMatch: {
+    color:      DARK.textPrimary,
+    fontWeight: '800',
   },
   empty: {
     paddingVertical:  40,

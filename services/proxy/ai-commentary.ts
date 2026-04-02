@@ -99,6 +99,24 @@ export default async function handler(req: Request): Promise<Response> {
     ? `- Higher timeframe context: ${htfTF} Wave ${htfLabel} (${htfStructure ?? 'impulse'}) — current ${waveLabel} is a sub-wave of this larger structure`
     : null;
 
+  // Wave stage: early (1/A), middle (2/3/B), late (4/5/C)
+  const lateLabels  = ['4', '5', 'C'];
+  const earlyLabels = ['1', '2', 'A'];
+  const isLateStage  = lateLabels.includes(waveLabel);
+  const isEarlyStage = earlyLabels.includes(waveLabel);
+  const stageNote = isLateStage
+    ? 'LATE STAGE — this wave is nearing completion; reversal risk is elevated.'
+    : isEarlyStage
+    ? 'EARLY STAGE — trend is establishing; follow-through probability is high.'
+    : 'MID STAGE — strongest trending phase typically underway.';
+
+  // Corrective bounce flag: W4, corrective B, or corrective structure in late position
+  const expectingBounce = waveLabel === '4' || waveLabel === 'B'
+    || (isLateStage && structure?.toLowerCase().includes('corrective'));
+  const bounceNote = expectingBounce
+    ? 'A corrective retrace is expected before the next directional leg completes.'
+    : null;
+
   // Detect potential W1/WC ambiguity (low confidence, corrective structure)
   const isAmbiguous = !isMultiDegree && probability < 0.55
     && (structure?.toLowerCase().includes('corrective') || waveLabel === '1' || waveLabel === 'A');
@@ -106,14 +124,19 @@ export default async function handler(req: Request): Promise<Response> {
     ? `Note: Wave 1 and Wave A (start of correction) look identical at this stage — probability is below 55%, so both scenarios are viable.`
     : null;
 
-  const prompt = `You are an institutional Elliott Wave analyst. Provide a 3–4 sentence trade interpretation for a professional trader. Be specific — name exact prices, don't hedge with generic disclaimers.
+  // Trigger level: closest fib to current price
+  const triggerLevel = nextTarget ?? (invalidation ?? null);
+
+  const prompt = `You are an institutional Elliott Wave analyst. Write exactly 3 sentences for a professional swing trader. Be specific — cite exact dollar prices, name the trigger level, and state what to watch for. No disclaimers.
 
 Situation:
 - Ticker: ${ticker}
 - Current price: ${price ? `$${price.toFixed(2)}` : 'unknown'} ${waveMoveText}
 - Primary count: Wave ${waveLabel} (${structure}) — ${Math.round(probability * 100)}% Bayesian confidence
+- Wave stage: ${stageNote}
 - Wave structure type: ${waveType ?? 'impulse'}
 ${htfContext ? htfContext : ''}
+${bounceNote ? `- ${bounceNote}` : ''}
 ${altText ? `- ${altText}` : ''}
 ${ambiguityNote ? `- ${ambiguityNote}` : ''}
 - Market regime: ${regime ?? 'unknown'}
@@ -121,18 +144,19 @@ ${ambiguityNote ? `- ${ambiguityNote}` : ''}
 - Fibonacci targets: ${targetsText}
 - Invalidation / stop: ${invalidation ? `$${invalidation.toFixed(2)}` : 'none computed'}
 - Key Fibonacci levels: ${fibText}
+- Next trigger level: ${triggerLevel ? `$${triggerLevel.toFixed(2)}` : 'none'}
 
 ${isMultiDegree
-  ? `Write exactly 3 sentences:
-1. Explain how ${ticker}'s current Wave ${waveLabel} fits within the ${htfTF} Wave ${htfLabel} structure — what position in the larger trend does this represent?
-2. Name the most actionable price target or support level implied by this degree alignment.
-3. State what invalidates this multi-degree count and what the trader should watch for.`
-  : `Write exactly 3 sentences:
-1. Describe what Wave ${waveLabel} in ${ticker} means right now — reference the price move and what typically follows.
-2. Name the most actionable Fibonacci level or target price and why it matters (GEX, nearest fib zone, or T1/T2).
-3. State precisely what invalidates this count (the specific price level) and what the alt scenario implies${isAmbiguous ? ' — address the W1 vs Wave A ambiguity' : ''}.`}
+  ? `Sentences:
+1. Explain how ${ticker}'s Wave ${waveLabel} fits within the ${htfTF} Wave ${htfLabel} structure and what this degree alignment means for near-term direction.
+2. Name the most actionable price level — the specific trigger that confirms the next leg — and the nearest Fibonacci target if that level holds.
+3. State the precise invalidation price and the one thing to watch before taking a position.`
+  : `Sentences:
+1. Describe what ${ticker} Wave ${waveLabel} means right now at $${price?.toFixed(2) ?? '?'}, including ${expectingBounce ? 'the corrective bounce setup and where it likely ends' : 'what typically follows this position in the count'}.
+2. State the specific trigger price to watch — the level that confirms the next leg — and the nearest Fibonacci target.
+3. Name the exact invalidation level${isAmbiguous ? ', address the W1 vs Wave A ambiguity' : ''}, and state what the alternate scenario implies for direction.`}
 
-Use present tense. No disclaimers.`;
+Use present tense. No disclaimers. Every sentence must name at least one specific price.`;
 
   try {
     const anthropicRes = await fetch(ANTHROPIC_API_URL, {

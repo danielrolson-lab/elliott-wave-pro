@@ -40,6 +40,44 @@ import { useEffect } from 'react';
 import type { WaveCount } from '@elliott-wave-pro/wave-engine';
 import type { ChartLayoutParams } from './chartTypes';
 
+// ── Confluence detection ───────────────────────────────────────────────────────
+
+/** Returns prices from `primary` that are within 0.5% of any price in `htf`. */
+function findConfluencePrices(primary: FibLevel[], htf: FibLevel[]): number[] {
+  const zones: number[] = [];
+  for (const p of primary) {
+    for (const h of htf) {
+      const pct = Math.abs(p.price - h.price) / Math.max(Math.abs(p.price), 0.001);
+      if (pct <= 0.005) {
+        // Use the midpoint of the two close levels
+        zones.push((p.price + h.price) / 2);
+        break;
+      }
+    }
+  }
+  return zones;
+}
+
+/** Build filled band rects (4px tall) at confluence price levels. */
+function buildConfluenceBands(
+  prices:     number[],
+  layout:     ChartLayoutParams,
+  chartTop:   number,
+  chartH:     number,
+  chartAreaW: number,
+): SkPath {
+  'worklet';
+  const path = Skia.Path.Make();
+  const { minP, maxP } = layout;
+  const BAND_H = 4;
+  for (const price of prices) {
+    if (price < minP || price > maxP) continue;
+    const y = pToY(price, minP, maxP, chartTop, chartH);
+    path.addRect(Skia.XYWHRect(0, y - BAND_H / 2, chartAreaW, BAND_H));
+  }
+  return path;
+}
+
 // ── Level definitions ─────────────────────────────────────────────────────────
 
 const RETRACE_RATIOS   = [0.236, 0.382, 0.500, 0.618, 0.786];
@@ -219,13 +257,15 @@ function FibAxisLabel({ text, color, price, layoutDV, chartTop, chartH, axisLeft
 // ── Public components ─────────────────────────────────────────────────────────
 
 export interface FibonacciOverlayLayerProps {
-  waveCounts:  readonly WaveCount[];
-  layoutDV:    SharedValue<ChartLayoutParams>;
-  chartTop:    number;
-  chartDrawH:  number;
-  chartAreaW:  number;
+  waveCounts:     readonly WaveCount[];
+  layoutDV:       SharedValue<ChartLayoutParams>;
+  chartTop:       number;
+  chartDrawH:     number;
+  chartAreaW:     number;
+  /** When provided (Multi-Degree mode), renders a second fib grid at subdegree style */
+  htfWaveCounts?: readonly WaveCount[];
   /** font prop kept for API compatibility but no longer used (labels moved to axis) */
-  font?:       SkFont | null;
+  font?:          SkFont | null;
 }
 
 /** Dashed horizontal lines only — place inside the chart clip group. */
@@ -235,15 +275,35 @@ export function FibonacciOverlayLayer({
   chartTop,
   chartDrawH,
   chartAreaW,
+  htfWaveCounts,
 }: FibonacciOverlayLayerProps) {
   const primaryCount = waveCounts[0];
-  const levels       = useMemo(() => buildPinballLevels(primaryCount), [primaryCount]);
+  const htfCount     = htfWaveCounts?.[0];
 
+  const levels    = useMemo(() => buildPinballLevels(primaryCount), [primaryCount]);
+  const htfLevels = useMemo(() => (htfCount ? buildPinballLevels(htfCount) : []), [htfCount]);
+
+  // Confluence zones: primary fib levels within 0.5% of an HTF fib level
+  const confluencePrices = useMemo(
+    () => (htfLevels.length > 0 ? findConfluencePrices(levels, htfLevels) : []),
+    [levels, htfLevels],
+  );
+
+  // Primary fib SharedValues
   const groupsSV = useSharedValue<GroupPaths>(EMPTY_GROUP_PATHS);
-  useEffect(() => {
-    groupsSV.value = groupLevels(levels);
-  }, [levels, groupsSV]);
+  useEffect(() => { groupsSV.value = groupLevels(levels); }, [levels, groupsSV]);
 
+  // HTF fib SharedValues (all lines yellow — sub-degree style)
+  const htfPricesSV = useSharedValue<number[]>([]);
+  useEffect(() => {
+    htfPricesSV.value = htfLevels.map((l) => l.price);
+  }, [htfLevels, htfPricesSV]);
+
+  // Confluence band prices
+  const confluenceSV = useSharedValue<number[]>([]);
+  useEffect(() => { confluenceSV.value = confluencePrices; }, [confluencePrices, confluenceSV]);
+
+  // Primary degree paths
   const orangePath = useDerivedValue((): SkPath => {
     'worklet';
     return buildHLines(groupsSV.value.orange, layoutDV.value, chartTop, chartDrawH, chartAreaW);
@@ -265,10 +325,23 @@ export function FibonacciOverlayLayer({
     return buildHLines(groupsSV.value.green, layoutDV.value, chartTop, chartDrawH, chartAreaW);
   });
 
+  // HTF (sub-degree) path — all one yellow style, thinner
+  const htfPath = useDerivedValue((): SkPath => {
+    'worklet';
+    return buildHLines(htfPricesSV.value, layoutDV.value, chartTop, chartDrawH, chartAreaW);
+  });
+
+  // Confluence band path
+  const confluencePath = useDerivedValue((): SkPath => {
+    'worklet';
+    return buildConfluenceBands(confluenceSV.value, layoutDV.value, chartTop, chartDrawH, chartAreaW);
+  });
+
   if (levels.length === 0) return null;
 
   return (
     <Group>
+      {/* ── Primary degree fibs ── */}
       <Path path={orangePath} style="stroke" strokeWidth={1} color="rgba(251,146,60,0.65)">
         <DashPathEffect intervals={[6, 4]} phase={0} />
       </Path>
@@ -284,6 +357,18 @@ export function FibonacciOverlayLayer({
       <Path path={greenPath} style="stroke" strokeWidth={1} color="rgba(50,205,50,0.65)">
         <DashPathEffect intervals={[6, 4]} phase={0} />
       </Path>
+
+      {/* ── Sub-degree (HTF) fibs — yellow, thinner, shorter dashes ── */}
+      {htfLevels.length > 0 && (
+        <Path path={htfPath} style="stroke" strokeWidth={0.7} color="rgba(255,240,100,0.45)">
+          <DashPathEffect intervals={[3, 5]} phase={0} />
+        </Path>
+      )}
+
+      {/* ── Confluence bands — white glow where two grids stack ── */}
+      {confluencePrices.length > 0 && (
+        <Path path={confluencePath} style="fill" color="rgba(255,255,255,0.10)" />
+      )}
     </Group>
   );
 }

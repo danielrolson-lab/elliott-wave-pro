@@ -13,9 +13,11 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.9",
+    "@types/sharp": "^0.32.0",
     "@types/ws": "^8.5.11",
     "dotenv": "^16.4.5",
     "jimp": "0.22.12",
+    "sharp": "^0.34.5",
     "tsx": "^4.16.0",
     "typescript": "^5.4.5",
     "ws": "^8.17.1"

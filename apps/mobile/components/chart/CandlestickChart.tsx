@@ -935,6 +935,7 @@ function CandlestickChart({
                 chartTop={CHART_TOP}
                 chartDrawH={CHART_DRAW_H}
                 chartAreaW={CHART_AREA_W}
+                htfWaveCounts={ewMode === 'multi-degree' ? htfWaveCounts : undefined}
               />
             )}
 
