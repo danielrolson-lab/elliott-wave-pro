@@ -19,6 +19,7 @@ const ROW1: PillDef[] = [
   { label: 'VWAP',         key: 'vwap' },
   { label: 'BB',           key: 'bb' },
   { label: 'EW Waves',     key: 'ewWaves' },
+  { label: 'Wave Proj.',   key: 'waveProjection' },
   { label: 'Fib Levels',   key: 'fibLevels' },
   { label: 'EW Channel',   key: 'ewChannel' },
   { label: 'Invalidation', key: 'invalidation' },

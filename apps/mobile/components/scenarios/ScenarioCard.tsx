@@ -310,7 +310,13 @@ export function ScenarioCard({
   );
 
   const [t1, t2, t3] = count.targets;
+  const isCompleteStage = v3?.stage === 'complete';
   const targetsValid = t1 > 0 && Math.abs(t1 - t2) > 0.05 && Math.abs(t1 - t3) > 0.05;
+  // For complete patterns: targets are corrective retracements (38.2%/61.8%/100%)
+  // For forming patterns: targets are Fibonacci extensions (T1/T2/T3)
+  const t1HeaderLabel = isCompleteStage ? '38.2%' : 'T1';
+  const t2HeaderLabel = isCompleteStage ? '61.8%' : 'T2';
+  const t3HeaderLabel = isCompleteStage ? '100%' : 'T3';
   const t1Label = useMemo(() => targetsValid ? fibAnnotate(t1, fibLevels) : '—', [t1, fibLevels, targetsValid]);
   const t2Label = useMemo(() => targetsValid ? fibAnnotate(t2, fibLevels) : '—', [t2, fibLevels, targetsValid]);
   const t3Label = useMemo(() => targetsValid ? fibAnnotate(t3, fibLevels) : '—', [t3, fibLevels, targetsValid]);
@@ -434,20 +440,29 @@ export function ScenarioCard({
 
       {/* ── Row 2: targets with Fib annotations (expanded only) ── */}
       {isExpanded && (
-        <View style={styles.row}>
-          <View style={styles.targetCell}>
-            <Text style={styles.targetLabel}>T1</Text>
-            <Text style={styles.targetPrice} numberOfLines={2}>{t1Label}</Text>
+        <>
+          {isCompleteStage && (
+            <View style={styles.correctionNotice}>
+              <Text style={styles.correctionText}>
+                {'↩ Structure complete — next: expect ABC corrective retracement'}
+              </Text>
+            </View>
+          )}
+          <View style={styles.row}>
+            <View style={styles.targetCell}>
+              <Text style={[styles.targetLabel, isCompleteStage && styles.targetLabelCorr]}>{t1HeaderLabel}</Text>
+              <Text style={styles.targetPrice} numberOfLines={2}>{t1Label}</Text>
+            </View>
+            <View style={styles.targetCell}>
+              <Text style={[styles.targetLabel, isCompleteStage && styles.targetLabelCorr]}>{t2HeaderLabel}</Text>
+              <Text style={styles.targetPrice} numberOfLines={2}>{t2Label}</Text>
+            </View>
+            <View style={styles.targetCell}>
+              <Text style={[styles.targetLabel, isCompleteStage && styles.targetLabelCorr]}>{t3HeaderLabel}</Text>
+              <Text style={styles.targetPrice} numberOfLines={2}>{t3Label}</Text>
+            </View>
           </View>
-          <View style={styles.targetCell}>
-            <Text style={styles.targetLabel}>T2</Text>
-            <Text style={styles.targetPrice} numberOfLines={2}>{t2Label}</Text>
-          </View>
-          <View style={styles.targetCell}>
-            <Text style={styles.targetLabel}>T3</Text>
-            <Text style={styles.targetPrice} numberOfLines={2}>{t3Label}</Text>
-          </View>
-        </View>
+        </>
       )}
 
       {/* ── Row 3: stop/meta (expanded only) ── */}
@@ -455,7 +470,19 @@ export function ScenarioCard({
         <View style={styles.row}>
           <Text style={styles.meta} numberOfLines={2}>Stop {stopLabel}</Text>
           <Text style={styles.metaSep}>·</Text>
-          <Text style={styles.meta}>R/R {count.rrRatio.toFixed(1)}x</Text>
+          <Text style={[
+            styles.meta,
+            count.rrRatio >= 3.0
+              ? { color: '#10B981' }
+              : count.rrRatio >= 2.0
+              ? { color: '#34D399' }
+              : count.rrRatio < 1.0
+              ? { color: '#F59E0B' }
+              : undefined,
+          ]}>
+            {count.rrRatio >= 3.0 ? '★ ' : count.rrRatio < 1.0 ? '⚠ ' : ''}
+            R/R {count.rrRatio.toFixed(1)}x
+          </Text>
           <Text style={styles.metaSep}>·</Text>
           <Text style={styles.meta}>CI {ciHalf(ci)}</Text>
           <Text style={styles.metaSep}>·</Text>
@@ -603,8 +630,25 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
   },
+  targetLabelCorr: {
+    color: '#ef5350',  // red tint for corrective retracement headers
+  },
   targetPrice: {
     color:    DARK.textPrimary,
+    fontSize: 9,
+    fontWeight: '500',
+  },
+  correctionNotice: {
+    backgroundColor: 'rgba(239,83,80,0.08)',
+    borderRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(239,83,80,0.3)',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginBottom: 5,
+  },
+  correctionText: {
+    color:    '#ef9090',
     fontSize: 9,
     fontWeight: '500',
   },

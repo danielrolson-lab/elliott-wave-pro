@@ -30,7 +30,14 @@ import type {
 } from '@elliott-wave-pro/wave-engine';
 import { useWaveCountStore } from '../stores/waveCount';
 
-const MAX_CANDLES = 200;
+// Analysis window per TF — how many candles the wave engine processes.
+// Chart can display ALL fetched candles; this only caps the wave analysis slice.
+// Sized to give ~3–4 weeks of structural context without being computationally heavy.
+const MAX_CANDLES_BY_TF: Readonly<Record<string, number>> = {
+  '1m': 150, '5m': 200, '15m': 300, '30m': 400,
+  '1h': 400, '4h': 350, '1D': 500, '1W': 200,
+};
+const MAX_CANDLES = 200; // fallback
 const EMPTY: WaveCount[] = [];
 
 // Shorter timeframes need a smaller minimum-swing floor to detect enough pivots.
@@ -106,13 +113,24 @@ function mapV3CandidateToWaveCount(
 
   const labels = isCorrective ? CORRECTIVE_LABELS : IMPULSE_LABELS;
 
-  // Build allWaves from sequential pivot pairs
-  const allWaves: WaveNode[] = [];
-  const pairCount = Math.min(pivots.length - 1, labels.length);
+  // Build allWaves from pivot pairs.
+  // • Impulse (5-wave): consecutive pairs 0→1, 1→2, 2→3, 3→4, 4→5
+  // • Zigzag / flat (3-wave): the engine stores the full 6-pivot window but
+  //   the ABC structure uses pivots at indices [0,2], [2,3], [3,5].
+  //   Using consecutive pairs here would draw 3 micro-segments instead of the
+  //   actual A, B, C waves.
+  const CORR_PAIRS: [number, number][] = [[0, 2], [2, 3], [3, 5]];
+  const pairIndices: [number, number][] = isCorrective
+    ? CORR_PAIRS.slice(0, Math.min(labels.length, pivots.length > 5 ? 3 : 1))
+    : Array.from({ length: Math.min(pivots.length - 1, labels.length) }, (_, i) => [i, i + 1] as [number, number]);
 
-  for (let i = 0; i < pairCount; i++) {
-    const p0 = pivots[i];
-    const p1 = pivots[i + 1];
+  const allWaves: WaveNode[] = [];
+
+  for (let i = 0; i < pairIndices.length; i++) {
+    const [si, ei] = pairIndices[i];
+    const p0 = pivots[si];
+    const p1 = pivots[ei];
+    if (!p0 || !p1) break;
 
     // Resolve bar index: use pivot.bar if available, else find nearest candle
     const resolveBarIndex = (ts: number, bar?: number): number => {
@@ -168,12 +186,29 @@ function mapV3CandidateToWaveCount(
     subwaves: [],
   };
 
-  // Targets — use engine-supplied zone if present; else compute Fibonacci extensions
+  // Targets
+  // • Forming stage: project forward in wave direction (Fibonacci extensions)
+  // • Complete stage: project CORRECTIVE retracement levels back into the structure.
+  //   A complete 5-wave impulse is followed by an ABC correction — show 38.2%/61.8%/100%
+  //   retracement of the full wave from origin to end as T1/T2/T3.
   const tz = candidate.targetZone;
   let t1 = tz?.[0] ?? 0;
   let t2 = tz?.[1] ?? 0;
   let t3 = 0;
-  if (t1 === 0 && pivots.length >= 2) {
+
+  if (candidate.stage === 'complete' && pivots.length >= 2) {
+    // Complete: show corrective retracement targets (counter-direction)
+    const waveOrigin = pivots[0].price;
+    const waveEnd    = pivots[pivots.length - 1].price;
+    const waveLen    = Math.abs(waveEnd - waveOrigin);
+    if (waveLen / Math.max(waveEnd, 0.01) >= 0.005) {
+      const corrDir = candidate.isBullish ? -1 : 1; // correction goes opposite direction
+      t1 = waveEnd + corrDir * waveLen * 0.382;
+      t2 = waveEnd + corrDir * waveLen * 0.618;
+      t3 = waveOrigin; // 100% retrace = full reversal
+    }
+  } else if (t1 === 0 && pivots.length >= 2) {
+    // Forming: project continuation extensions
     const waveOrigin = pivots[0].price;
     const lastPivot  = pivots[pivots.length - 1].price;
     const waveLen    = Math.abs(lastPivot - waveOrigin);
@@ -279,8 +314,9 @@ export function useWaveEngine(
   useEffect(() => {
     if (candles.length < 20) return;
 
+    const tfMaxCandles = MAX_CANDLES_BY_TF[timeframe] ?? MAX_CANDLES;
     const HIST_THRESHOLD = 50; // bars from live edge to trigger historical mode
-    const liveSliceOffset = Math.max(0, candles.length - MAX_CANDLES);
+    const liveSliceOffset = Math.max(0, candles.length - tfMaxCandles);
     const isHistMode = viewportStart !== undefined
       && viewportStart < liveSliceOffset - HIST_THRESHOLD;
 
@@ -297,13 +333,18 @@ export function useWaveEngine(
       ? Math.max(0, viewportStart! - 20)  // 20-bar context before viewport
       : liveSliceOffset;
     const sliceEnd = isHistMode
-      ? Math.min(candles.length, viewportStart! + MAX_CANDLES)
+      ? Math.min(candles.length, viewportStart! + tfMaxCandles)
       : candles.length;
     const slice = candles.slice(sliceOffset, sliceEnd) as OHLCV[];
 
     // Step 1: detect pivots using existing v1/v2 pivot detector
     const swingFloor = MIN_SWING_PCT[timeframe] ?? 0.0005;
-    const pivots = detectPivots(slice, 0.5, timeframe, swingFloor);
+    // Adaptive ATR multiplier — shorter TFs need higher sensitivity (more pivots)
+    const ATR_MULT: Record<string, number> = {
+      '1m': 1.5, '5m': 1.2, '15m': 1.0, '30m': 0.8, '1h': 1.0, '4h': 0.8, '1D': 0.5, '1W': 0.4,
+    };
+    const atrMult = ATR_MULT[timeframe] ?? 0.5;
+    const pivots = detectPivots(slice, atrMult, timeframe, swingFloor);
     if (__DEV__) {
       console.log(`[useWaveEngine] ${ticker}_${timeframe}: slice=${slice.length} bars → ${pivots.length} pivots`);
     }
@@ -349,10 +390,89 @@ export function useWaveEngine(
       };
     }
 
+    // Step 4b: Recency reorder — prefer the highest-confidence candidate whose
+    // last pivot falls in the recent 30% of the slice.  Without this, a
+    // high-confidence complete pattern from the middle of history wins over a
+    // more-recent (but slightly lower-scoring) forming pattern, and the wave
+    // overlay ends up off-screen to the left.
+    const recentCutoff = Math.floor(slice.length * 0.70);
+    const recentCandidates = [...v3Counts].sort((a, b) => {
+      const aLastBar = a.pivots[a.pivots.length - 1]?.bar ?? 0;
+      const bLastBar = b.pivots[b.pivots.length - 1]?.bar ?? 0;
+      const aRecent = aLastBar >= recentCutoff ? 1 : 0;
+      const bRecent = bLastBar >= recentCutoff ? 1 : 0;
+      if (aRecent !== bRecent) return bRecent - aRecent; // recent first
+      return b.score.total - a.score.total; // then by engine score
+    });
+    // Only apply the reorder if it produces a different primary candidate
+    const rankedCounts = recentCandidates[0]?.id !== v3Counts[0]?.id
+      ? recentCandidates
+      : v3Counts;
+
     // Step 5: map v3 candidates → WaveCount[] (top 4)
-    const top4 = v3Counts.slice(0, 4).map((candidate) =>
+    const top4 = rankedCounts.slice(0, 4).map((candidate) =>
       mapV3CandidateToWaveCount(candidate, sliceOffset, candles, ticker, timeframe),
     );
+
+    // Step 6: Post-completion re-anchor pass.
+    // When the primary count is a COMPLETE pattern, run a second engine pass
+    // starting from the last pivot of that pattern. This surfaces the opposing
+    // impulse that a human analyst would manually anchor from the completion point.
+    const primary = rankedCounts[0];
+    if (primary?.stage === 'complete' && primary.pivots.length >= 2) {
+      const lastPivot = primary.pivots[primary.pivots.length - 1];
+      // lastPivot.bar is relative to the slice; convert to absolute candle index
+      const anchorBar = sliceOffset + (lastPivot.bar ?? 0);
+      // Need at least 8 bars after the anchor for a meaningful sub-structure
+      if (anchorBar < candles.length - 8) {
+        const reanchorOffset = Math.max(sliceOffset, anchorBar - 2); // 2 bars of context
+        const reanchorSlice = candles.slice(reanchorOffset) as OHLCV[];
+
+        if (reanchorSlice.length >= 8) {
+          const rePivots = detectPivots(reanchorSlice, atrMult, timeframe, swingFloor);
+          if (rePivots.length >= 4) {
+            const reV3Pivots = rePivots.map((p) => ({
+              ts:     p.timestamp,
+              price:  p.price,
+              isHigh: p.type === 'HH' || p.type === 'LH',
+              bar:    p.index,
+            }));
+            const reCandidates = generateWaveCountsV3({
+              pivots:     reV3Pivots,
+              ticker,
+              timeframe,
+              assetClass: 'equity',
+              state:      {},
+              candles:    reanchorSlice.map((c) => ({
+                ts: c.timestamp, open: c.open, high: c.high,
+                low: c.low, close: c.close, volume: c.volume,
+              })),
+            });
+            // Keep candidates that are OPPOSING direction to the primary
+            const opposingDir = !primary.isBullish;
+            const opposingCandidates = reCandidates.filter(
+              (c) => c.isBullish === opposingDir && c.confidence >= 0.25,
+            );
+            if (opposingCandidates.length > 0) {
+              const mapped = opposingCandidates.slice(0, 2).map((c) =>
+                mapV3CandidateToWaveCount(c, reanchorOffset, candles, ticker, timeframe),
+              );
+              // Merge: keep top4 primary counts, append opposing ones (up to 4 total)
+              const merged = [...top4, ...mapped].slice(0, 4);
+              if (__DEV__) {
+                console.log(
+                  `[useWaveEngine] re-anchor found ${opposingCandidates.length} opposing candidates from bar ${anchorBar}`,
+                );
+              }
+              const next: UseWaveEngineResult = { waveCounts: merged, sliceOffset, isHistorical: isHistMode };
+              setResult(next);
+              setCounts(`${ticker}_${timeframe}`, merged);
+              return;
+            }
+          }
+        }
+      }
+    }
 
     if (__DEV__) {
       console.log(

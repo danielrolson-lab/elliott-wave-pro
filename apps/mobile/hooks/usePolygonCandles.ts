@@ -47,15 +47,18 @@ interface TFSpec {
   lookbackDays: number;
 }
 
+// Lookback sized so each TF can show ~1000 bars when fully zoomed out.
+// Anchor: 30m = 21 calendar days ≈ 1,000 bars on a 24hr/day basis.
+// Scaled proportionally: days = 21 × (tf_minutes / 30).
 const TF_MAP: Readonly<Record<TimeframeOption, TFSpec>> = {
-  '1m':  { multiplier: 1,  timespan: 'minute', lookbackDays: 2   },
-  '5m':  { multiplier: 5,  timespan: 'minute', lookbackDays: 5   },
-  '15m': { multiplier: 15, timespan: 'minute', lookbackDays: 5   },
-  '30m': { multiplier: 30, timespan: 'minute', lookbackDays: 5   },
-  '1h':  { multiplier: 1,  timespan: 'hour',   lookbackDays: 30  },
-  '4h':  { multiplier: 4,  timespan: 'hour',   lookbackDays: 30  },
-  '1D':  { multiplier: 1,  timespan: 'day',    lookbackDays: 730 },
-  '1W':  { multiplier: 1,  timespan: 'week',   lookbackDays: 730 },
+  '1m':  { multiplier: 1,  timespan: 'minute', lookbackDays: 2    },  // ~780 mkt bars; 1m is API-rate-limited
+  '5m':  { multiplier: 5,  timespan: 'minute', lookbackDays: 5    },  // ~390 bars (keep short — 5m data is dense)
+  '15m': { multiplier: 15, timespan: 'minute', lookbackDays: 11   },  // ~572 bars
+  '30m': { multiplier: 30, timespan: 'minute', lookbackDays: 21   },  // ~1,092 bars
+  '1h':  { multiplier: 1,  timespan: 'hour',   lookbackDays: 42   },  // ~1,092 bars
+  '4h':  { multiplier: 4,  timespan: 'hour',   lookbackDays: 168  },  // ~1,092 bars
+  '1D':  { multiplier: 1,  timespan: 'day',    lookbackDays: 1008 },  // ~1,008 trading days ≈ 4 years
+  '1W':  { multiplier: 1,  timespan: 'week',   lookbackDays: 730  },  // ~104 weekly bars
 };
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────

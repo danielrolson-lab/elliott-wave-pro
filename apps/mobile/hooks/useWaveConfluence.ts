@@ -51,7 +51,7 @@ export interface UseWaveConfluenceResult {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CONFLUENCE_TFS = ['5m', '15m', '30m', '1h', '1D'] as const;
+const CONFLUENCE_TFS = ['5m', '15m', '30m', '1h', '4h', '1D'] as const;
 type ConfluenceTF = typeof CONFLUENCE_TFS[number];
 
 interface TFSpec {
@@ -61,11 +61,12 @@ interface TFSpec {
 }
 
 const CONF_TF_MAP: Record<ConfluenceTF, TFSpec> = {
-  '5m':  { multiplier: 5,  timespan: 'minute', lookbackDays: 5  },
-  '15m': { multiplier: 15, timespan: 'minute', lookbackDays: 5  },
-  '30m': { multiplier: 30, timespan: 'minute', lookbackDays: 10 },
-  '1h':  { multiplier: 1,  timespan: 'hour',   lookbackDays: 30 },
-  '1D':  { multiplier: 1,  timespan: 'day',    lookbackDays: 730},
+  '5m':  { multiplier: 5,  timespan: 'minute', lookbackDays: 5   },
+  '15m': { multiplier: 15, timespan: 'minute', lookbackDays: 11  },
+  '30m': { multiplier: 30, timespan: 'minute', lookbackDays: 21  },
+  '1h':  { multiplier: 1,  timespan: 'hour',   lookbackDays: 42  },
+  '4h':  { multiplier: 4,  timespan: 'hour',   lookbackDays: 168 },
+  '1D':  { multiplier: 1,  timespan: 'day',    lookbackDays: 730 },
 };
 
 const MIN_SWING_PCT: Record<ConfluenceTF, number> = {
@@ -73,10 +74,12 @@ const MIN_SWING_PCT: Record<ConfluenceTF, number> = {
   '15m': 0.00025,
   '30m': 0.00030,
   '1h':  0.00035,
+  '4h':  0.00040,
   '1D':  0.00050,
 };
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const TF_COUNT = CONFLUENCE_TFS.length; // 6
 
 // ── In-memory cache ───────────────────────────────────────────────────────────
 
@@ -145,7 +148,11 @@ async function fetchPolygonCandles(
 
 function analyzeCandles(candles: OHLCV[], timeframe: ConfluenceTF): Omit<TFResult, 'status'> {
   const swingFloor = MIN_SWING_PCT[timeframe];
-  const pivots = detectPivots(candles, 0.5, timeframe, swingFloor);
+  const ATR_MULT: Record<string, number> = {
+    '1m': 1.5, '5m': 1.2, '15m': 1.0, '30m': 0.8, '1h': 1.0, '4h': 0.8, '1D': 0.5, '1W': 0.4,
+  };
+  const atrMult = ATR_MULT[timeframe] ?? 0.5;
+  const pivots = detectPivots(candles, atrMult, timeframe, swingFloor);
 
   if (pivots.length < 4) {
     return {
@@ -248,13 +255,13 @@ function computeConfluence(results: TFResult[]): ConfluenceScore {
   const majorityDir: 'BULL' | 'BEAR' = bullCount >= bearCount ? 'BULL' : 'BEAR';
   const directionCount = Math.max(bullCount, bearCount);
 
-  const directionScore = directionCount / 5;
+  const directionScore = directionCount / TF_COUNT;
 
   // Position agreement: check how many share same wave label
   const positionCounts: Record<string, number> = {};
   for (const r of ready) positionCounts[r.waveLabel] = (positionCounts[r.waveLabel] ?? 0) + 1;
   const maxPositionCount = Math.max(...Object.values(positionCounts));
-  const positionScore = maxPositionCount / 5;
+  const positionScore = maxPositionCount / TF_COUNT;
 
   const avgConfidence = Math.round(ready.reduce((s, r) => s + r.confidence, 0) / ready.length);
   const avgConfidenceNorm = avgConfidence / 100;
@@ -366,7 +373,7 @@ export function useWaveConfluence(ticker: string): UseWaveConfluenceResult {
   }, []);
 
   const teaser = score
-    ? `${score.majorityDir === 'BULL' ? '▲' : '▼'} ${score.majorityDir} · ${score.label} · ${score.directionCount}/5 TFs`
+    ? `${score.majorityDir === 'BULL' ? '▲' : '▼'} ${score.majorityDir} · ${score.label} · ${score.directionCount}/${TF_COUNT} TFs`
     : 'Tap to analyze';
 
   return { results, score, loading, refresh: () => fetchAll(true), teaser };

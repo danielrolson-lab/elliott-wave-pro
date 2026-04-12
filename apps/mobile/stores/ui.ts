@@ -28,6 +28,7 @@ export interface OverlayConfig {
   showEWChannel:    boolean;   // independent toggle for channel lines
   showInvalidation: boolean;   // invalidation price line
   showWaveLabels:   boolean;   // wave number labels on pivots
+  showWaveProjection: boolean; // projected wave zig-zag simulation
   fibRetracements: boolean;
   fibExtensions: boolean;
   fibTimeZones: boolean;
@@ -99,6 +100,7 @@ const DEFAULT_OVERLAYS: OverlayConfig = {
   showEWChannel:    false,
   showInvalidation: true,
   showWaveLabels:   true,
+  showWaveProjection: true,
   fibRetracements: true,
   fibExtensions: true,
   fibTimeZones: false,

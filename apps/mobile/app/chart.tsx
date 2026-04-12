@@ -490,9 +490,10 @@ export function ChartScreen() {
     gexLevels:       layers.showGEX,
     priorDayLevels: false, priorWeekLevels: false,
     monthlyOpen: false, roundNumbers: false,
-    showEWChannel:    layers.ewChannel,
-    showInvalidation: layers.invalidation,
-    showWaveLabels:   layers.waveLabels,
+    showEWChannel:      layers.ewChannel,
+    showInvalidation:   layers.invalidation,
+    showWaveLabels:     layers.waveLabels,
+    showWaveProjection: layers.waveProjection,
   }), [layers]);
 
   const chartBlockH = Math.round(screenH * 0.54);
@@ -578,6 +579,7 @@ export function ChartScreen() {
                     candles={candles}
                     overlays={overlays}
                     ticker={ACTIVE_TICKER}
+                    timeframe={timeframe}
                     waveCounts={waveCounts}
                     waveSliceOffset={sliceOffset}
                     gexLevels={gexLevels}
@@ -622,6 +624,8 @@ export function ChartScreen() {
                 timeframe={timeframe}
                 ewMode={ewMode}
                 htfWaveCounts={htfWaveCounts}
+                confluenceMajorityDir={confluence.score?.majorityDir ?? null}
+                confluenceDirectionCount={confluence.score?.directionCount ?? 0}
               />
 
               {/* Wave Confluence Button */}

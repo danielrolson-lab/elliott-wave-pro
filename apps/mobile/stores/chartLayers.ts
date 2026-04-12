@@ -26,10 +26,11 @@ export interface ChartLayersState {
   ma200:       boolean;  // ema200
   vwap:        boolean;
   bb:          boolean;  // bollinger bands
-  ewWaves:     boolean;  // elliott wave labels + channel + projections
-  fibLevels:   boolean;  // fib retracements + extensions
-  ewChannel:   boolean;  // wave channel overlay
-  invalidation: boolean; // invalidation line on wave overlay
+  ewWaves:        boolean;  // elliott wave labels + channel + projections
+  waveProjection: boolean;  // projected wave zig-zag simulation
+  fibLevels:      boolean;  // fib retracements + extensions
+  ewChannel:      boolean;  // wave channel overlay
+  invalidation:   boolean;  // invalidation line on wave overlay
 
   // Row 2 — Indicators
   showRSI:    boolean;
@@ -54,7 +55,7 @@ export interface ChartLayersState {
 const DEFAULTS = {
   ewMode: 'now' as EWMode,
   ma20: true, ma50: true, ma200: false, vwap: false, bb: false,
-  ewWaves: true, fibLevels: true, ewChannel: false, invalidation: true,
+  ewWaves: true, waveProjection: true, fibLevels: true, ewChannel: false, invalidation: true,
   showRSI: true, showMACD: false, showVolume: true, showCVD: false, showGEX: false,
   darkPool: false, optionsFlow: false, sentiment: false, waveLabels: true, altCount: false,
 };

@@ -61,13 +61,15 @@ function getHtfContextLine(htfWaveCounts: readonly WaveCount[]): string | null {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export interface ScenarioPanelProps {
-  ticker:         string;
-  timeframe:      string;
-  ewMode?:        string;
-  htfWaveCounts?: readonly WaveCount[];
+  ticker:                   string;
+  timeframe:                string;
+  ewMode?:                  string;
+  htfWaveCounts?:           readonly WaveCount[];
+  confluenceMajorityDir?:   'BULL' | 'BEAR' | null;
+  confluenceDirectionCount?: number;
 }
 
-export function ScenarioPanel({ ticker, timeframe, ewMode, htfWaveCounts = [] }: ScenarioPanelProps) {
+export function ScenarioPanel({ ticker, timeframe, ewMode, htfWaveCounts = [], confluenceMajorityDir = null, confluenceDirectionCount = 0 }: ScenarioPanelProps) {
   const counts = useWaveCountStore(
     useShallow((s) => s.counts[`${ticker}_${timeframe}`] ?? []),
   );
@@ -81,6 +83,28 @@ export function ScenarioPanel({ ticker, timeframe, ewMode, htfWaveCounts = [] }:
   const htfContextLine = ewMode === 'multi-degree'
     ? getHtfContextLine(htfWaveCounts)
     : null;
+
+  // Detect MTF direction conflict: primary count direction vs confluence majority.
+  // Use _v3.isBullish (the engine's authoritative direction) rather than deriving
+  // from allWaves[0] — corrective ABC patterns have wave A going opposite to the
+  // overall pattern direction, so allWaves[0] gives the wrong answer.
+  const mtfConflict = (() => {
+    if (!confluenceMajorityDir || confluenceDirectionCount < 4) return null;
+    const primary = counts[0] as (WaveCount & { _v3?: { isBullish: boolean } }) | undefined;
+    if (!primary) return null;
+    // Prefer _v3.isBullish; fall back to last wave direction if unavailable
+    let primaryIsBull: boolean;
+    if (primary._v3 !== undefined) {
+      primaryIsBull = primary._v3.isBullish;
+    } else {
+      const lastWave = primary.allWaves[primary.allWaves.length - 1];
+      if (!lastWave?.endPivot) return null;
+      primaryIsBull = lastWave.startPivot.price < lastWave.endPivot.price;
+    }
+    const confluenceIsBull = confluenceMajorityDir === 'BULL';
+    if (primaryIsBull === confluenceIsBull) return null;
+    return confluenceMajorityDir;
+  })();
 
   if (counts.length === 0) {
     return (
@@ -113,6 +137,15 @@ export function ScenarioPanel({ ticker, timeframe, ewMode, htfWaveCounts = [] }:
       {showInfo && (
         <View style={styles.infoBox}>
           <Text style={styles.infoText}>{CALIBRATION_NOTE}</Text>
+        </View>
+      )}
+
+      {/* ── MTF conflict warning ── */}
+      {mtfConflict !== null && (
+        <View style={[styles.conflictBanner, { borderColor: mtfConflict === 'BEAR' ? '#ef5350' : '#26a69a' }]}>
+          <Text style={[styles.conflictText, { color: mtfConflict === 'BEAR' ? '#ef5350' : '#26a69a' }]}>
+            {`⚠ HTF ${confluenceDirectionCount}/6 TFs ${mtfConflict} — primary count is opposite direction`}
+          </Text>
         </View>
       )}
 
@@ -188,6 +221,21 @@ const styles = StyleSheet.create({
     color:      DARK.textSecondary,
     fontSize:   11,
     lineHeight: 16,
+  },
+
+  // MTF conflict banner
+  conflictBanner: {
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 6,
+    backgroundColor: 'rgba(239,83,80,0.07)',
+  },
+  conflictText: {
+    fontSize: 10,
+    fontWeight: '600',
+    lineHeight: 14,
   },
 
   // Empty state
