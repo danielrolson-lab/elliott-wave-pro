@@ -1,0 +1,39 @@
+diff --git a/android/README.md b/android/README.md
+deleted file mode 100644
+index ac2fbda377ad1213c02f090138f48054e5660547..0000000000000000000000000000000000000000
+diff --git a/cpp/skia/include/private/base/README.md b/cpp/skia/include/private/base/README.md
+deleted file mode 100644
+index 7f4f17b228c2b8e664b462983d66f735c6383fe7..0000000000000000000000000000000000000000
+diff --git a/lib/commonjs/renderer/HostConfig.js b/lib/commonjs/renderer/HostConfig.js
+index e45331fc5499002d122643b97db25e02717510a4..b2c7477bcd6760b152dddc797ea21891e9a2548d 100644
+--- a/lib/commonjs/renderer/HostConfig.js
++++ b/lib/commonjs/renderer/HostConfig.js
+@@ -66,8 +66,26 @@ const skHostConfig = exports.skHostConfig = {
+   },
+   createTextInstance(_text, _rootContainerInstance, _hostContext, _internalInstanceHandle) {
+     debug("createTextInstance");
+-    // return SpanNode({}, text) as SkNode;
+-    throw new Error("Text nodes are not supported yet");
++    // Diagnostic: log fiber stack so we can identify the bare text node source
++    let fiberStack = '';
++    try {
++      let fiber = _internalInstanceHandle;
++      const names = [];
++      while (fiber) {
++        const name = (fiber.type && (fiber.type.displayName || fiber.type.name)) || (typeof fiber.type === 'string' ? fiber.type : '');
++        if (name) names.push(String(name));
++        fiber = fiber.return;
++        if (names.length > 20) break;
++      }
++      fiberStack = names.join(' > ');
++    } catch (_) {}
++    console.error('[SKIA BUG-TEXT-01] Bare text node: text=' + JSON.stringify(_text) + ' | stack: ' + fiberStack);
++    // Return a safe empty node to prevent app crash
++    try {
++      return (0, _HostComponents.createNode)(_rootContainerInstance, 'group', {});
++    } catch (_e2) {
++      throw new Error("Text nodes are not supported yet");
++    }
+   },
+   createInstance(type, pristineProps, container, _hostContext, _internalInstanceHandle) {
+     debug("createInstance", type);
