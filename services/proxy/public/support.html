@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Support — Elliott Wave Pro</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #000000;
+      --surface:  #111111;
+      --border:   #222222;
+      --text:     #e8e8e8;
+      --muted:    #888888;
+      --accent:   #4ade80;
+      --link:     #60a5fa;
+      --warn:     #facc15;
+      --radius:   8px;
+      --max-w:    720px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.7;
+      padding: 0 16px 80px;
+    }
+
+    header {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      text-decoration: none;
+    }
+    .logo-wave {
+      width: 40px;
+      height: 40px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+    .logo-name { font-size: 18px; font-weight: 600; color: var(--text); }
+
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
+    .meta { color: var(--muted); font-size: 14px; }
+
+    main { max-width: var(--max-w); margin: 48px auto 0; }
+
+    .contact-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+    @media (max-width: 540px) { .contact-grid { grid-template-columns: 1fr; } }
+
+    .contact-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .contact-card h3 {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .contact-card p { font-size: 15px; margin: 0; }
+    .contact-card a { color: var(--accent); }
+
+    .response-time {
+      display: inline-block;
+      background: #1a2a1a;
+      border: 1px solid #2a4a2a;
+      color: var(--accent);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-top: 6px;
+    }
+
+    h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 20px;
+      letter-spacing: -0.3px;
+    }
+
+    .faq-section { margin-bottom: 48px; }
+
+    .faq-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .faq-q {
+      padding: 16px 20px;
+      font-weight: 600;
+      font-size: 15px;
+      background: var(--surface);
+      cursor: default;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .faq-q::after {
+      content: "▾";
+      color: var(--muted);
+      flex-shrink: 0;
+      font-size: 12px;
+      margin-top: 3px;
+    }
+    .faq-a {
+      padding: 16px 20px;
+      font-size: 15px;
+      border-top: 1px solid var(--border);
+      color: var(--text);
+    }
+    .faq-a p { margin-bottom: 10px; }
+    .faq-a p:last-child { margin-bottom: 0; }
+    .faq-a ul { margin: 8px 0 8px 20px; }
+    .faq-a li { margin-bottom: 4px; }
+    .faq-a code {
+      background: var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-family: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+      font-size: 13px;
+    }
+
+    .doc-links {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 48px;
+    }
+    @media (max-width: 540px) { .doc-links { grid-template-columns: 1fr; } }
+
+    .doc-link {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      text-decoration: none;
+      transition: border-color 0.15s;
+    }
+    .doc-link:hover { border-color: var(--accent); }
+    .doc-link-title { font-weight: 600; font-size: 15px; color: var(--text); }
+    .doc-link-desc  { font-size: 13px; color: var(--muted); }
+
+    .known-issues {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--warn);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 48px;
+    }
+    .known-issues h3 { font-size: 15px; font-weight: 600; margin-bottom: 10px; color: var(--warn); }
+    .known-issues ul { margin: 0 0 0 18px; }
+    .known-issues li { margin-bottom: 6px; font-size: 14px; }
+
+    footer {
+      max-width: var(--max-w);
+      margin: 64px auto 0;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    footer a { color: var(--link); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="https://elliottwave.pro">
+    <div class="logo-wave">EW</div>
+    <span class="logo-name">Elliott Wave Pro</span>
+  </a>
+  <h1>Support</h1>
+  <p class="meta">We are here to help. Average response time: 1 business day.</p>
+</header>
+
+<main>
+
+  <!-- Contact -->
+  <div class="contact-grid" style="margin-bottom:48px">
+    <div class="contact-card">
+      <h3>Email Support</h3>
+      <p><a href="mailto:daniel.r.olson@gmail.com">daniel.r.olson@gmail.com</a></p>
+      <span class="response-time">Response within 1 business day</span>
+    </div>
+    <div class="contact-card">
+      <h3>Website</h3>
+      <p><a href="https://elliottwave.pro">elliottwave.pro</a></p>
+      <span class="response-time">Documentation &amp; changelog</span>
+    </div>
+  </div>
+
+  <!-- Documentation links -->
+  <div class="faq-section">
+    <h2>Documentation</h2>
+    <div class="doc-links">
+      <a class="doc-link" href="https://elliottwave.pro/docs/architecture">
+        <span class="doc-link-title">Architecture</span>
+        <span class="doc-link-desc">System design, data flow, component map</span>
+      </a>
+      <a class="doc-link" href="https://elliottwave.pro/docs/api">
+        <span class="doc-link-title">Quant API</span>
+        <span class="doc-link-desc">REST endpoints, WebSocket events, rate limits</span>
+      </a>
+      <a class="doc-link" href="https://elliottwave.pro/docs/deployment">
+        <span class="doc-link-title">Deployment Guide</span>
+        <span class="doc-link-desc">Supabase, Vercel, Fly.io step-by-step</span>
+      </a>
+      <a class="doc-link" href="https://elliottwave.pro/privacy">
+        <span class="doc-link-title">Privacy Policy</span>
+        <span class="doc-link-desc">Data collection, retention, your rights</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Known issues -->
+  <div class="known-issues">
+    <h3>Known Issues — v1.0.0</h3>
+    <ul>
+      <li>Voice commands require a quiet environment; background noise may prevent recognition.</li>
+      <li>VIX / 10Y yield / DXY on the Home screen show "—" until live data feed is connected.</li>
+      <li>TickerDetail drill-down screen is not yet available — navigating from Watchlist goes back to Chart.</li>
+      <li>Wave Scanner requires a Pro or Elite subscription and an active internet connection.</li>
+      <li>Dark pool feed requires the Polygon.io Starter plan or higher for FINRA OTC trade data.</li>
+    </ul>
+  </div>
+
+  <!-- FAQ -->
+  <div class="faq-section">
+    <h2>Frequently Asked Questions</h2>
+
+    <div class="faq-item">
+      <div class="faq-q">What data subscription do I need for real-time data?</div>
+      <div class="faq-a">
+        <p>Elliott Wave Pro uses <strong>Polygon.io</strong> for market data. For real-time WebSocket ticks, a Polygon Starter plan (free tier) covers US stocks. For options chain data (GEX, IV surface, flow feed), you need the Polygon Options add-on. For FINRA dark pool data, Polygon Business plan or higher is required.</p>
+        <p>Historical data (Wave Scanner, backfill) is available on any Polygon plan.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">How does the Elliott Wave engine work?</div>
+      <div class="faq-a">
+        <p>The engine detects swing highs and lows using an adaptive ATR-based ZigZag algorithm. It generates all valid impulse and corrective wave count candidates and scores them using a Bayesian posterior that incorporates:</p>
+        <ul>
+          <li>Fibonacci ratio adherence (wave lengths, retracements, extensions)</li>
+          <li>RSI-14 momentum alignment per wave</li>
+          <li>MACD histogram direction per wave</li>
+          <li>Volume profile (Wave 3 should have highest volume)</li>
+          <li>Multi-timeframe alignment with the 1H and 4H counts</li>
+        </ul>
+        <p>The top 4 candidates are displayed as scenarios, ranked by posterior probability. The engine runs on every new candle close.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">Why does the wave count change so often?</div>
+      <div class="faq-a">
+        <p>Elliott Wave counts are inherently ambiguous until a pattern completes. The 4-scenario panel is designed to show you <em>all plausible interpretations</em> simultaneously, not just one fixed count. As price develops and new pivots form, posterior probabilities update and scenarios may reorder or change.</p>
+        <p>This is normal and reflects the genuine uncertainty in real-time wave analysis. Use the probability bars to size your conviction accordingly.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">How do I restore my subscription after reinstalling?</div>
+      <div class="faq-a">
+        <p>Go to <strong>Settings → Subscription</strong> and tap <strong>Restore Purchases</strong>. Sign in with the same Apple ID or Google account you used for the original purchase. Your subscription will be restored automatically via RevenueCat.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">Can I use Elliott Wave Pro on multiple devices?</div>
+      <div class="faq-a">
+        <p>Yes. Sign in with the same account on each device. Your watchlist, alerts, and trade journal sync via Supabase. Your subscription entitlement is tied to your Apple ID or Google account and is available on all devices signed in with that account.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">How do I cancel my subscription?</div>
+      <div class="faq-a">
+        <p><strong>iOS:</strong> Open the App Store → tap your profile picture → Subscriptions → Elliott Wave Pro → Cancel.</p>
+        <p><strong>Android:</strong> Open the Google Play Store → Menu → Subscriptions → Elliott Wave Pro → Cancel.</p>
+        <p>Your subscription remains active until the end of the current billing period. We do not offer refunds for partial billing periods, but Apple and Google may at their discretion.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">What is the Quant API (Elite tier)?</div>
+      <div class="faq-a">
+        <p>The Quant API is a REST + WebSocket interface that exposes Elliott Wave Pro's engine output for algorithmic use:</p>
+        <ul>
+          <li><code>GET /wave-count</code> — primary wave count for any ticker</li>
+          <li><code>GET /scenarios</code> — all 4 ranked scenarios</li>
+          <li><code>GET /regime</code> — current market regime</li>
+          <li><code>GET /gex</code> — GEX levels (Zero GEX, Call Wall, Put Wall)</li>
+          <li><code>GET /signals</code> — composite wave + regime + GEX signal</li>
+          <li>WebSocket — real-time probability_change, count_flip, target_reached events</li>
+        </ul>
+        <p>Rate limit: 50,000 requests/day on Elite. API key management is available in Settings.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">The AI commentary stopped updating. What's wrong?</div>
+      <div class="faq-a">
+        <p>AI commentary triggers only when the primary scenario probability shifts by more than 5% and is debounced to avoid excessive requests. If the market is in a low-volatility period with stable wave counts, commentary may not update for extended periods — this is expected behaviour.</p>
+        <p>If commentary never appears, check that <code>EXPO_PUBLIC_AI_COMMENTARY_URL</code> is set correctly in your environment, and that the Vercel proxy is deployed with a valid <code>ANTHROPIC_API_KEY</code>.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">How do I delete my account and data?</div>
+      <div class="faq-a">
+        <p>Email <a href="mailto:daniel.r.olson@gmail.com">daniel.r.olson@gmail.com</a> with the subject line "Account Deletion Request" from the email address associated with your account. We will delete all server-side data within 5 business days and confirm by reply.</p>
+        <p>Local on-device data (MMKV) will be erased when you uninstall the app.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">Is Elliott Wave Pro suitable for beginners?</div>
+      <div class="faq-a">
+        <p>Elliott Wave Pro is designed for active traders who are already familiar with Elliott Wave Theory and technical analysis. The AI commentary is intended to help interpret wave counts in plain English, but understanding the underlying theory will significantly improve how you use the app.</p>
+        <p>The app does not provide investment advice. All wave counts are probabilistic scenarios, not trade recommendations.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Disclaimer -->
+  <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; font-size: 13px; color: var(--muted);">
+    <strong style="color: var(--text);">Disclaimer:</strong> Elliott Wave Pro is a technical analysis tool. Nothing in the app constitutes investment advice or a recommendation to buy or sell any security. All trading involves risk. Past performance of wave count patterns is not indicative of future results.
+  </div>
+
+</main>
+
+<footer>
+  <span>© 2026 Elliott Wave Pro. All rights reserved.</span>
+  <span><a href="https://elliottwave.pro/privacy">Privacy Policy</a> &nbsp;·&nbsp; <a href="https://elliottwave.pro">Home</a></span>
+</footer>
+
+</body>
+</html>
