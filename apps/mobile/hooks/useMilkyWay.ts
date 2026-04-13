@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useMilkyWayStore } from '../stores/milkyway';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://api.elliottwave-pro.com';
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://elliott-wave-pro-proxy.vercel.app';
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
 
 export function useMilkyWay(timeframe: string) {
