@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import type { TFResult, ConfluenceScore } from '../../hooks/useWaveConfluence';
+import { useMarketDataStore } from '../../stores/marketData';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@ async function fetchConfluenceAI(
   ticker: string,
   results: TFResult[],
   confluenceLabel: string,
+  currentPrice: number | null,
 ): Promise<string> {
   const ready = results.filter((r) => r.status === 'ready');
   const summary = ready
@@ -69,16 +71,22 @@ async function fetchConfluenceAI(
     ? ready.reduce((s, r) => s + r.confidence, 0) / ready.length / 100
     : 0;
 
+  // Best setup targets for grounding
+  const bestSetup = ready.sort((a, b) => b.confidence - a.confidence)[0];
+
   const resp = await fetch(`${API_BASE}/api/ai-commentary`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       ticker,
-      waveLabel:   `MTF: ${summary}`,
+      waveLabel:   htfResult ? `${htfResult.waveLabel} (${htfResult.timeframe} HTF)` : 'MTF',
       structure:   'multi-timeframe',
       probability: avgConfidence,
       regime:      confluenceLabel,
-      waveType:    `Multi-timeframe interpretation for a swing trader. ${htfContext} ${ltfContext} Overall: ${confluenceLabel}. All TFs: ${summary}. Answer in exactly 2 sentences: (1) what does the current short-term wave fit into at the larger degree — name the HTF wave and what structure it belongs to, (2) what this degree alignment means for the nearest actionable trade direction and price target. Be direct, name specific prices where known.`,
+      price:       currentPrice,
+      nextTarget:  bestSetup?.t1 ?? null,
+      invalidation: bestSetup?.stopPrice ?? null,
+      waveType:    `Multi-timeframe interpretation for a swing trader. ${htfContext} ${ltfContext} Overall: ${confluenceLabel}. All TFs: ${summary}. Answer in exactly 2 sentences: (1) what the current short-term wave fits into at the larger degree — name the HTF wave and what structure it belongs to, (2) what this degree alignment means for the nearest actionable trade direction and price target. Be direct, name specific prices where known.`,
     }),
   });
 
@@ -119,7 +127,7 @@ function SummaryCard({
         <ConfluenceBadge label={score.label} />
       </View>
       <Text style={styles.summarySubtitle}>
-        {ticker} · {score.directionCount} of 5 timeframes{' '}
+        {ticker} · {score.directionCount} of 6 timeframes{' '}
         <Text style={{ color: score.majorityDir === 'BULL' ? '#22C55E' : '#EF4444' }}>
           {score.majorityDir}ISH
         </Text>
@@ -231,6 +239,20 @@ export function WaveConfluenceModal({
   score,
   onSelectTF,
 }: WaveConfluenceModalProps) {
+  // Current price: live quote first, fall back to last candle close so AI
+  // always has a real price and never hallucinates from training data.
+  const quote   = useMarketDataStore((s) => s.quotes[ticker]);
+  const candles = useMarketDataStore((s) => {
+    const store = s.candles;
+    // Try common timeframes in order of preference
+    for (const tf of ['1h', '30m', '15m', '5m', '1D']) {
+      const c = store[`${ticker}_${tf}`];
+      if (c && c.length > 0) return c;
+    }
+    return null;
+  });
+  const currentPrice = quote?.last ?? (candles ? candles[candles.length - 1].close : null);
+
   const slideY  = useRef(new Animated.Value(SHEET_H)).current;
   const [aiText,    setAiText]    = useState<string>('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -255,7 +277,7 @@ export function WaveConfluenceModal({
 
     setAiLoading(true);
     setAiText('');
-    fetchConfluenceAI(ticker, results, score.label)
+    fetchConfluenceAI(ticker, results, score.label, currentPrice)
       .then((text) => {
         setAiText(text);
         aiCache.set(key, { text, ts: Date.now() });
