@@ -129,9 +129,11 @@ export default async function handler(req: Request): Promise<Response> {
 
   const prompt = `You are an institutional Elliott Wave analyst. Write exactly 3 sentences for a professional swing trader. Be specific — cite exact dollar prices, name the trigger level, and state what to watch for. No disclaimers.
 
+CRITICAL PRICE RULE: You MUST use ONLY the exact prices provided below. Do NOT substitute prices from your training data or general knowledge about this ticker. The prices below are the ACTUAL current market prices — trust them completely, even if they differ from what you expect.
+
 Situation:
 - Ticker: ${ticker}
-- Current price: ${price ? `$${price.toFixed(2)}` : 'unknown'} ${waveMoveText}
+- Current price: ${price ? `$${price.toFixed(2)}` : 'MISSING — do not generate commentary, return: "Price data unavailable — please wait for candles to load."'} ${waveMoveText}
 - Primary count: Wave ${waveLabel} (${structure}) — ${Math.round(probability * 100)}% Bayesian confidence
 - Wave stage: ${stageNote}
 - Wave structure type: ${waveType ?? 'impulse'}

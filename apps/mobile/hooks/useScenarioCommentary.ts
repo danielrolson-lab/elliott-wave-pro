@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { computeFibLevels } from '@elliott-wave-pro/wave-engine';
 import type { WaveCount } from '@elliott-wave-pro/wave-engine';
 import { useWaveCountStore } from '../stores/waveCount';
 import { useMarketDataStore } from '../stores/marketData';
@@ -29,6 +30,7 @@ export function useScenarioCommentary(
 ) {
   const counts   = useWaveCountStore((s) => s.counts[`${ticker}_${timeframe}`] ?? []);
   const quote    = useMarketDataStore((s) => s.quotes[ticker]);
+  const candles  = useMarketDataStore((s) => s.candles[`${ticker}_${timeframe}`] ?? []);
   const gexStore = useGEXStore((s) => s.levels[ticker]);
   const regime   = useMarketDataStore((s) => s.regimes[ticker]);
 
@@ -61,7 +63,29 @@ export function useScenarioCommentary(
       setLoading(countId, true);
 
       try {
+        // Use live quote when available; fall back to last candle close so
+        // the AI always receives the actual current price, never 'unknown'.
+        const lastCandleClose = candles.length > 0
+          ? candles[candles.length - 1].close
+          : null;
+        const currentPrice = quote?.last ?? lastCandleClose ?? null;
+
+        // Compute Fibonacci levels using the engine — gives Claude real
+        // price context rather than 'none computed'.
         const fibLevels: { label: string; price: number }[] = [];
+        if (currentPrice && currentPrice > 0) {
+          try {
+            const computed = computeFibLevels(primaryCount, currentPrice);
+            for (const f of computed) {
+              const label = f.ratio >= 1.0
+                ? `${f.ratio.toFixed(3)} extension`
+                : `${(f.ratio * 100).toFixed(1)}% retracement`;
+              fibLevels.push({ label, price: f.price });
+            }
+          } catch {
+            // computeFibLevels returns [] if wave structure is incomplete — safe to ignore
+          }
+        }
 
         const gexLevel = gexStore
           ? (gexStore.zeroGex ? `Zero GEX at $${gexStore.zeroGex.toFixed(2)}` : null)
@@ -87,7 +111,7 @@ export function useScenarioCommentary(
           t2:           primaryCount.targets?.[1] ?? null,
           t3:           primaryCount.targets?.[2] ?? null,
           invalidation: primaryCount.stopPrice ?? null,
-          price:        quote?.last ?? null,
+          price:        currentPrice,
           gexLevel,
           altWaveLabel:  altCount ? String(altCount.currentWave?.label ?? '?') : null,
           altConfidence: altCount?.posterior?.posterior ?? null,
